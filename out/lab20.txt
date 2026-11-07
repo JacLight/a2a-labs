@@ -1,0 +1,10 @@
+[1] the card lists how to sign in
+    {'bearer': {'httpAuthSecurityScheme': {'scheme': 'Bearer'}}}
+[2] SendMessage with no token
+    HTTP 401  WWW-Authenticate: Bearer  {'error': 'missing or unknown bearer token'}
+[3] alice (token) creates task dcd3742e
+    alice gets her task:        ok
+    bob gets alice's task:      TaskNotFoundError: Task not found
+    bob cancels alice's task:   TaskNotFoundError: Task not found
+    bob gets a made-up task ID: TaskNotFoundError: Task not found
+    -> the same answer: bob cannot tell whether the task exists

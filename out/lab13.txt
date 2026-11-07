@@ -1,0 +1,11 @@
+[1] one loop, every state (each job sent with returnImmediately, then checked)
+    summarise Q3  SUBMITTED > WORKING > COMPLETED      -> collect: ['summary']
+    ask           SUBMITTED > WORKING > INPUT_REQUIRED -> paused, needs you: "Which quarter do you mean?"
+    login         SUBMITTED > WORKING > AUTH_REQUIRED  -> paused, needs you: "Needs a CRM access token."
+    break         SUBMITTED > WORKING > FAILED         -> it's over (CRM timed out)
+    refuse        SUBMITTED > WORKING > REJECTED       -> it's over (not a job I do)
+    slow          SUBMITTED > WORKING > CANCELED       -> it's over
+[2] a waiting call returns at a pause, not only at the end
+    returned after 0.7s with state INPUT_REQUIRED
+[3] final means final: a message to the completed task
+    refused: UnsupportedOperationError: Task 83555154-626e-46a2-88b8-d08d360e77da is in terminal state: TASK_STATE_COMPLETED

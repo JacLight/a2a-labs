@@ -1,0 +1,10 @@
+[1] streaming caller sends "hi": every step, in order
+    task          TASK_STATE_SUBMITTED
+    status_update TASK_STATE_WORKING  "Processing request..."
+    artifact_update "Hello, World! I have received your request (hi)"
+    status_update TASK_STATE_COMPLETED  "Request is completed!"
+[2] non-streaming caller sends "hi": one final task
+    task          TASK_STATE_COMPLETED  artifact: "Hello, World! I have received your request (hi)"
+[3] caller sends "ping": the agent answers with a single Message
+    message       "pong"  (no task created)
+[4] tasks in the store: 2 (the two "hi" jobs; "ping" made none)

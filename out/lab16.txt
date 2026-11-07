@@ -1,0 +1,13 @@
+[1] collect the artifacts of a completed task
+    image: ['url'] image/png
+    counts: ['data'] application/json
+    note: ['text'] text/plain
+[2] GetTask with historyLength (a maximum; the agent may keep or send fewer)
+    historyLength=not set: 3 message(s) ['find faces in team.p', 'Loading the image...', 'Found 2 faces, drawi']
+    historyLength=1: 1 message(s) ['Found 2 faces, drawi']
+    historyLength=0: 0 message(s) []
+    current status message (not in history): "Done."
+[3] ListTasks, filtered (newest first)
+    contextId of a: [('b', 'COMPLETED'), ('a', 'COMPLETED')]  total=2
+    status INPUT_REQUIRED: [('c', 'INPUT_REQUIRED')]
+    page_size=2: ['c', 'b']  next page token: yes  artifacts included: False

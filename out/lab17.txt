@@ -1,0 +1,17 @@
+[1] card says streaming: True
+[2] stream a job; each update in order
+    task           SUBMITTED
+    status update  WORKING "Processing request..."
+    artifact update "Hello, "  append=False last_chunk=False
+    artifact update "World! "  append=True last_chunk=False
+    artifact update "(Hi there)"  append=True last_chunk=True
+    status update  COMPLETED
+    stream closed; assembled artifact: "Hello, World! (Hi there)"
+[3] drop the stream part-way, then subscribe to the task again
+    task           SUBMITTED
+    status update  WORKING "Processing request..."
+    artifact update "Hello, "  append=False last_chunk=False
+    (resubscribed) task           WORKING  (artifact so far: "Hello, World! ")
+    (resubscribed) artifact update "(Hi again)"  append=True last_chunk=True
+    (resubscribed) status update  COMPLETED
+    assembled artifact: "Hello, World! (Hi again)"

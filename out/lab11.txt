@@ -1,0 +1,8 @@
+[1] fetch the card from /.well-known/agent-card.json
+    got: Route Planner 1.2.0
+[2] skill for "route-planning": Plan a route
+[3] takes text/plain: True   returns application/json: True
+[4] streaming: True   push notifications: True
+[5] sign-in: open_id_connect_security_scheme "oidc", scopes ['openid', 'profile']
+[6] card interfaces: ['HTTP+JSON', 'JSONRPC']
+    client picked: JsonRpcTransport at http://127.0.0.1:59711

@@ -1,0 +1,12 @@
+[card] supported interfaces, in order:
+    1. JSONRPC    http://127.0.0.1:57897/jsonrpc
+    2. HTTP+JSON  http://127.0.0.1:57897/rest
+[A] caller supports ['HTTP+JSON', 'JSONRPC']
+    server saw: POST /jsonrpc
+    reply: TASK_STATE_COMPLETED  "Hello! (hi)"
+[B] caller supports ['HTTP+JSON']
+    server saw: POST /rest/message:send
+    reply: TASK_STATE_COMPLETED  "Hello! (hi)"
+[C] caller supports ['JSONRPC']
+    server saw: POST /jsonrpc
+    reply: TASK_STATE_COMPLETED  "Hello! (hi)"

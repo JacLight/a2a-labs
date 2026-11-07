@@ -1,0 +1,11 @@
+[1] cancel a running task
+    before: WORKING
+    cancel returned the task, now CANCELED
+[2] cancel a task that already finished
+    task 53f92fdd.. COMPLETED: "Warm bread, baked fresh every morning."
+    error: TaskNotCancelableError: Task cannot be canceled
+[3] a finished task can't be reopened
+    error: UnsupportedOperationError: Task 53f92fdd.. is in terminal state: TASK_STATE_COMPLETED
+[4] follow-up: same contextId, referenceTaskIds -> a new task
+    new task 0d833df8.. COMPLETED  new id: True  same context: True
+    "Warm bread. (shorter version of task 53f92fdd..)"

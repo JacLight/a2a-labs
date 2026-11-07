@@ -1,0 +1,17 @@
+[1] card says push notifications: True
+[2] send the job with a webhook address and credentials; no open connection
+    task 32488290.. TASK_STATE_SUBMITTED
+    a call with the wrong credentials gets 401
+[3] what reaches the webhook (until it goes quiet for 1 s)
+    task           SUBMITTED
+    statusUpdate   task "not-mine": not one I started, ignored
+    statusUpdate   WORKING
+    artifactUpdate artifact ready
+    statusUpdate   COMPLETED
+    statusUpdate   duplicate, ignored
+    GetTask: TASK_STATE_COMPLETED, artifact "Sales up 6% week on week."
+[4] agent side: checking the webhook addresses callers give
+    http://10.0.0.5/hook             SDK check allows: False
+    http://169.254.169.254/latest    SDK check allows: False
+    http://127.0.0.1:22/             SDK check allows: False
+    register http://192.168.1.10/hook -> InvalidParamsError: Invalid push notification URL

@@ -1,0 +1,12 @@
+[1] fetch the card with plain httpx: GET /.well-known/agent-card.json
+    name:         Hello World Agent 0.0.1
+    skill:        Echo Bot: Acknowledges your request with a hello.  examples ['hi', 'how are you']
+    takes/returns ['text/plain'] -> ['text/plain']
+    capabilities: {'streaming': True, 'pushNotifications': False, 'extendedAgentCard': True}
+    interface:    JSONRPC http://127.0.0.1:57875 (A2A 1.0)
+    sign-in:      {'bearer': {'httpAuthSecurityScheme': {'scheme': 'Bearer'}}}
+[2] ask for the extended card WITHOUT a token
+    refused: A2AClientError: HTTP Error 401: Client error '401 Unauthorized' for url 'http://127.0.0.1:57875'
+[3] ask for the extended card WITH the example token
+    name:   Hello World Agent - Extended Edition
+    skills: ['Echo Bot', 'Echo Bot (Super Mode)']

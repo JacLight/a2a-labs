@@ -1,0 +1,2264 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A2A labs</title><style>
+:root{--bg:#fbfaf7;--fg:#1d2433;--muted:#6b7280;--line:#e5e2da;--pane:#f4f2ec;--accent:#b45309;--code:#fffdf8}
+@media (prefers-color-scheme:dark){:root{--bg:#15171b;--fg:#e8e6e1;--muted:#9aa0a6;--line:#2c2f36;--pane:#1b1e23;--accent:#f59e0b;--code:#111317}}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,Inter,system-ui,sans-serif}
+.wrap{display:grid;grid-template-columns:260px 1fr;max-width:1240px;margin:0 auto}
+nav{position:sticky;top:0;height:100vh;overflow:auto;padding:26px 14px;border-right:1px solid var(--line)}
+nav a{display:flex;gap:10px;padding:7px 8px;border-radius:8px;color:var(--fg);text-decoration:none;font-size:14px;line-height:1.35}
+nav a:hover{background:var(--pane)} nav b{color:var(--accent);font:600 13px/1.35 ui-monospace,monospace;flex:none}
+main{padding:30px 34px 80px;min-width:0} h1{font-size:28px;margin:0 0 6px} .lede{color:var(--muted);max-width:760px}
+section{border-top:1px solid var(--line);padding:26px 0 8px} .k{margin:0;color:var(--accent);font:600 12px/1 ui-monospace,monospace;letter-spacing:.08em}
+h2{margin:6px 0 4px;font-size:22px} h3{font-size:15px;margin:18px 0 4px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+code{font:14px ui-monospace,"JetBrains Mono",monospace;background:var(--pane);padding:1px 5px;border-radius:5px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font:13px/1.5 ui-monospace,"JetBrains Mono",monospace}
+pre code{background:none;padding:0} pre.out{max-height:420px}
+details{margin:10px 0} summary{cursor:pointer;font-weight:600} summary code{font-weight:400}
+@media (max-width:820px){.wrap{grid-template-columns:1fr} nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)} main{padding:20px 16px 60px}}
+</style></head><body><div class="wrap"><nav><a href="#lab06"><b>06</b>The smallest A2A server</a><a href="#lab07"><b>07</b>Writing your Agent Card</a><a href="#lab08"><b>08</b>Handling a job</a><a href="#lab09"><b>09</b>Stopping to ask, and cancels</a><a href="#lab10"><b>10</b>Serving over more than one binding</a><a href="#lab11"><b>11</b>Finding an agent to call</a><a href="#lab12"><b>12</b>Sending the job</a><a href="#lab13"><b>13</b>The states your code handles</a><a href="#lab14"><b>14</b>When the remote agent asks you a question</a><a href="#lab15"><b>15</b>When it needs a login or an approval</a><a href="#lab16"><b>16</b>Getting the results</a><a href="#lab17"><b>17</b>Live updates with streaming</a><a href="#lab18"><b>18</b>Callbacks with push notifications</a><a href="#lab19"><b>19</b>Cancelling, and follow-ups</a><a href="#lab20"><b>20</b>Securing your agent</a><a href="#lab23"><b>23</b>Versions and extensions</a></nav><main>
+<h1>A2A labs</h1>
+<p class="lede">Short tutorials you can run, one for each section of the video where code helps. Each one uses the official Python SDK (a2a-sdk 1.3.0), starts its own server on your machine, prints what happened and stops.</p>
+<h3>Set up once</h3><pre>cd a2a/labs
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python lab06_serve.py</pre>
+<section id="lab06"><p class="k">LAB 06</p><h2>The smallest A2A server</h2><h3>What the video showed</h3>
+<p>To offer your agent you publish an Agent Card and run an A2A server. The SDK handles the protocol; you write the executor, the code that runs when a job arrives.</p>
+<h3>Run it</h3>
+<pre><code>python lab06_serve.py
+</code></pre>
+<p>It starts its own server on a free local port, sends one message, prints the reply and stops. Sample output: <code>out/lab06.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code>: one server, two addresses: the card at <code>/.well-known/agent-card.json</code> (served by <code>create_agent_card_routes</code>) and the JSON-RPC endpoint at <code>/</code> (served by <code>create_jsonrpc_routes</code>).</li>
+<li>In the code, <code>DefaultRequestHandler(agent_executor=..., task_store=InMemoryTaskStore(), agent_card=card)</code> is the SDK part. You don't write any protocol handling.</li>
+<li><code>HelloExecutor.execute</code> is your part: it creates a task, calls <code>HelloAgent().invoke(...)</code>, adds the result as an artifact and sets the task to completed.</li>
+<li><code>[3]</code>: the caller gets back a task in <code>TASK_STATE_COMPLETED</code> with the agent's text as its artifact.</li>
+<li><code>HelloAgent</code> stands for your agent. It could be built with any framework, or none.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Change the text that <code>HelloAgent.invoke</code> returns, run again, and see it in the <code>artifact:</code> line.</li>
+<li>Send <code>'how are you'</code> instead of <code>'hi'</code> (the second example listed on the card's skill).</li>
+</ul>
+<details><summary>The code <code>lab06_serve.py</code></summary><pre>&quot;&quot;&quot;Lab 06 (video section s06): the smallest A2A server.
+
+Two things make your agent available: an Agent Card, and an A2A server that
+receives jobs, runs them with your agent and reports back. The SDK does the
+protocol; you write the executor: what happens when a job arrives.
+Adapted from the official A2A Hello World sample (a2a-sdk 1.3.0).
+&quot;&quot;&quot;
+import asyncio, socket
+import uvicorn
+from starlette.applications import Starlette
+from a2a.client import ClientConfig, create_client
+from a2a.helpers import (get_artifact_text, get_message_text, new_task_from_user_message,
+                         new_text_message, new_text_part)
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.events import EventQueue
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Role,
+                       SendMessageRequest, TaskState)
+
+with socket.socket() as s:                       # pick a free port on this machine
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+
+
+class HelloAgent:                                # &quot;your agent&quot;: any code, any framework, or none
+    async def invoke(self, text: str) -&gt; str:
+        return f&#x27;Hello, World! I have received your request ({text})&#x27;
+
+
+class HelloExecutor(AgentExecutor):              # your code: the bridge between A2A and your agent
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        task = context.current_task or new_task_from_user_message(context.message)
+        if not context.current_task:
+            await event_queue.enqueue_event(task)
+        updater = TaskUpdater(event_queue=event_queue, task_id=task.id, context_id=task.context_id)
+        result = await HelloAgent().invoke(get_message_text(context.message))
+        await updater.add_artifact(parts=[new_text_part(text=result, media_type=&#x27;text/plain&#x27;)])
+        await updater.update_status(state=TaskState.TASK_STATE_COMPLETED)
+
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        raise NotImplementedError(&#x27;Cancel is not supported.&#x27;)   # same choice as the sample
+
+
+# Part 1: the Agent Card (who you are, what you do, where to reach you).
+card = AgentCard(
+    name=&#x27;Hello World Agent&#x27;, description=&#x27;Just a hello world agent&#x27;, version=&#x27;0.0.1&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;echo_bot&#x27;, name=&#x27;Echo Bot&#x27;, description=&#x27;Replies with a hello.&#x27;,
+                       tags=[&#x27;echo&#x27;], examples=[&#x27;hi&#x27;, &#x27;how are you&#x27;])])
+
+# Part 2: the A2A server. The SDK&#x27;s request handler runs your executor and keeps tasks in a store.
+handler = DefaultRequestHandler(agent_executor=HelloExecutor(), task_store=InMemoryTaskStore(),
+                                agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+
+
+async def main():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+    print(f&#x27;[1] server up at {URL}&#x27;)
+    print(f&#x27;    card:     {URL}/.well-known/agent-card.json&#x27;)
+    print(f&#x27;    JSON-RPC: {URL}/&#x27;)
+
+    # A caller: read the card from the URL, then send one message.
+    client = await create_client(URL, client_config=ClientConfig(streaming=False))
+    print(&#x27;[2] send &quot;hi&quot;&#x27;)
+    request = SendMessageRequest(message=new_text_message(&#x27;hi&#x27;, role=Role.ROLE_USER))
+    async for response in client.send_message(request):
+        task = response.task
+        print(f&#x27;[3] reply: task {task.id[:8]}...  state {TaskState.Name(task.status.state)}&#x27;)
+        print(f&#x27;    artifact: {get_artifact_text(task.artifacts[0])}&#x27;)
+    await client.close()
+
+    server.should_exit = True
+    await serving
+    print(&#x27;[4] server stopped&#x27;)
+
+
+asyncio.run(main())
+</pre></details>
+<details><summary>Sample output <code>out/lab06.txt</code></summary><pre class="out">[1] server up at http://127.0.0.1:57872
+    card:     http://127.0.0.1:57872/.well-known/agent-card.json
+    JSON-RPC: http://127.0.0.1:57872/
+[2] send &quot;hi&quot;
+[3] reply: task 54dd1f35...  state TASK_STATE_COMPLETED
+    artifact: Hello, World! I have received your request (hi)
+[4] server stopped
+</pre></details></section><section id="lab07"><p class="k">LAB 07</p><h2>Writing your Agent Card</h2><h3>What the video showed</h3>
+<p>Callers read your card to decide whether to send you a job: your skills, the content you take and return, the extras you support, where you can be reached and how to sign in. Extra details for signed-in callers go in an extended card.</p>
+<h3>Run it</h3>
+<pre><code>python lab07_agent_card.py
+</code></pre>
+<p>Sample output: <code>out/lab07.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code> fetches the card with plain <code>httpx</code>, with no A2A library on the caller side. It's just JSON at <code>/.well-known/agent-card.json</code>.</li>
+<li>The numbered comments <code># 1.</code> to <code># 5.</code> in the card code match the card's parts: skills (name, description, examples), content types (<code>text/plain</code>), capabilities (<code>streaming</code>, <code>pushNotifications</code>, <code>extendedAgentCard</code>), the interface (<code>JSONRPC</code>, URL, A2A <code>1.0</code>) and the sign-in scheme.</li>
+<li><code>sign-in:</code> shows one HTTP bearer scheme. That's one of several kinds a card can list (API key, HTTP auth, OAuth 2.0, OpenID Connect, mutual TLS).</li>
+<li><code>[2]</code> without a token the extended card request gets HTTP 401; <code>[3]</code> with the example token it returns the extended card with the extra skill <code>Echo Bot (Super Mode)</code>.</li>
+<li>The comment above <code>BearerCheck</code>: the spec says the extended card MUST require authentication, but the SDK serves it to any request that reaches the route. Here the check is done by plain Starlette middleware.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Add a second public skill to <code>card</code> (a new <code>AgentSkill</code>) and see it appear in <code>[1]</code>.</li>
+<li>Change <code>default_output_modes</code> to <code>['application/json']</code> and check the <code>takes/returns</code> line.</li>
+</ul>
+<details><summary>The code <code>lab07_agent_card.py</code></summary><pre>&quot;&quot;&quot;Lab 07 (video section s07): writing your Agent Card.
+
+Callers read the card to decide whether to send your agent a job. It lists your
+skills, the content you take and return, the extras you support, where you can
+be reached and how callers sign in. The SDK serves it at /.well-known/agent-card.json.
+Extra details for signed-in callers go in an extended card.
+&quot;&quot;&quot;
+import asyncio, socket
+import httpx, uvicorn
+from starlette.applications import Starlette
+from starlette.authentication import (AuthCredentials, AuthenticationBackend,
+                                      AuthenticationError, SimpleUser)
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.responses import JSONResponse
+from a2a.client import ClientConfig, create_client
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, GetExtendedAgentCardRequest,
+                       HTTPAuthSecurityScheme, SecurityRequirement, SecurityScheme, StringList)
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+EXAMPLE_TOKEN = &#x27;example-token-123&#x27;              # an example only; real tokens come from your sign-in system
+
+echo = AgentSkill(id=&#x27;echo_bot&#x27;, name=&#x27;Echo Bot&#x27;, tags=[&#x27;echo&#x27;],                 # 1. skills
+                  description=&#x27;Acknowledges your request with a hello.&#x27;, examples=[&#x27;hi&#x27;, &#x27;how are you&#x27;])
+super_echo = AgentSkill(id=&#x27;echo_bot_super_mode&#x27;, name=&#x27;Echo Bot (Super Mode)&#x27;, tags=[&#x27;echo&#x27;],
+                        description=&#x27;Replies with extra enthusiasm.&#x27;, examples=[&#x27;super hi&#x27;])
+card = AgentCard(
+    name=&#x27;Hello World Agent&#x27;, description=&#x27;Just a hello world agent&#x27;, version=&#x27;0.0.1&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],    # 2. content in and out
+    capabilities=AgentCapabilities(streaming=True, push_notifications=False,    # 3. extras
+                                   extended_agent_card=True),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL,    # 4. where to reach it
+                                         protocol_version=&#x27;1.0&#x27;)],
+    security_schemes={&#x27;bearer&#x27;: SecurityScheme(                                  # 5. how to sign in
+        http_auth_security_scheme=HTTPAuthSecurityScheme(scheme=&#x27;Bearer&#x27;))},     #    (one of several kinds)
+    security_requirements=[SecurityRequirement(schemes={&#x27;bearer&#x27;: StringList()})],
+    skills=[echo])
+extended = AgentCard()
+extended.CopyFrom(card)
+extended.name = &#x27;Hello World Agent - Extended Edition&#x27;
+extended.skills.append(super_echo)                                             # extra skill, signed-in only
+
+
+class Unused(AgentExecutor):                     # this lab sends no jobs; lab 06 and lab 08 do
+    async def execute(self, context, event_queue): ...
+    async def cancel(self, context, event_queue): ...
+
+
+# The spec says fetching the extended card MUST require authentication. The SDK serves it to any
+# request that reaches the route, so the sign-in check is yours: here, plain Starlette middleware.
+class BearerCheck(AuthenticationBackend):        # the public card stays open,
+    async def authenticate(self, conn):          # every A2A call needs the token
+        if conn.url.path == &#x27;/.well-known/agent-card.json&#x27;:
+            return None
+        if conn.headers.get(&#x27;authorization&#x27;) != f&#x27;Bearer {EXAMPLE_TOKEN}&#x27;:
+            raise AuthenticationError(&#x27;missing or wrong bearer token&#x27;)
+        return AuthCredentials([&#x27;authenticated&#x27;]), SimpleUser(&#x27;caller-a&#x27;)
+
+
+handler = DefaultRequestHandler(agent_executor=Unused(), task_store=InMemoryTaskStore(),
+                                agent_card=card, extended_agent_card=extended)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)],
+                middleware=[Middleware(AuthenticationMiddleware, backend=BearerCheck(),
+                            on_error=lambda conn, e: JSONResponse({&#x27;error&#x27;: str(e)}, status_code=401))])
+
+
+async def main():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+
+    print(&#x27;[1] fetch the card with plain httpx: GET /.well-known/agent-card.json&#x27;)
+    async with httpx.AsyncClient() as http:
+        c = (await http.get(f&#x27;{URL}/.well-known/agent-card.json&#x27;)).json()
+    print(f&quot;    name:         {c[&#x27;name&#x27;]} {c[&#x27;version&#x27;]}&quot;)
+    for sk in c[&#x27;skills&#x27;]:
+        print(f&quot;    skill:        {sk[&#x27;name&#x27;]}: {sk[&#x27;description&#x27;]}  examples {sk[&#x27;examples&#x27;]}&quot;)
+    print(f&quot;    takes/returns {c[&#x27;defaultInputModes&#x27;]} -&gt; {c[&#x27;defaultOutputModes&#x27;]}&quot;)
+    print(f&quot;    capabilities: {c[&#x27;capabilities&#x27;]}&quot;)
+    for i in c[&#x27;supportedInterfaces&#x27;]:
+        print(f&quot;    interface:    {i[&#x27;protocolBinding&#x27;]} {i[&#x27;url&#x27;]} (A2A {i[&#x27;protocolVersion&#x27;]})&quot;)
+    print(f&quot;    sign-in:      {c[&#x27;securitySchemes&#x27;]}&quot;)
+
+    print(&#x27;[2] ask for the extended card WITHOUT a token&#x27;)
+    anon = await create_client(card, client_config=ClientConfig(streaming=False))
+    try:
+        await anon.get_extended_agent_card(GetExtendedAgentCardRequest())
+    except Exception as e:
+        print(f&#x27;    refused: {type(e).__name__}: {str(e).splitlines()[0]}&#x27;)
+    await anon.close()
+
+    print(&#x27;[3] ask for the extended card WITH the example token&#x27;)
+    http = httpx.AsyncClient(headers={&#x27;Authorization&#x27;: f&#x27;Bearer {EXAMPLE_TOKEN}&#x27;})
+    signed_in = await create_client(card, client_config=ClientConfig(streaming=False, httpx_client=http))
+    ext = await signed_in.get_extended_agent_card(GetExtendedAgentCardRequest())
+    print(f&#x27;    name:   {ext.name}&#x27;)
+    print(f&#x27;    skills: {[sk.name for sk in ext.skills]}&#x27;)
+    await http.aclose()
+
+    server.should_exit = True
+    await serving
+
+
+asyncio.run(main())
+</pre></details>
+<details><summary>Sample output <code>out/lab07.txt</code></summary><pre class="out">[1] fetch the card with plain httpx: GET /.well-known/agent-card.json
+    name:         Hello World Agent 0.0.1
+    skill:        Echo Bot: Acknowledges your request with a hello.  examples [&#x27;hi&#x27;, &#x27;how are you&#x27;]
+    takes/returns [&#x27;text/plain&#x27;] -&gt; [&#x27;text/plain&#x27;]
+    capabilities: {&#x27;streaming&#x27;: True, &#x27;pushNotifications&#x27;: False, &#x27;extendedAgentCard&#x27;: True}
+    interface:    JSONRPC http://127.0.0.1:57875 (A2A 1.0)
+    sign-in:      {&#x27;bearer&#x27;: {&#x27;httpAuthSecurityScheme&#x27;: {&#x27;scheme&#x27;: &#x27;Bearer&#x27;}}}
+[2] ask for the extended card WITHOUT a token
+    refused: A2AClientError: HTTP Error 401: Client error &#x27;401 Unauthorized&#x27; for url &#x27;http://127.0.0.1:57875&#x27;
+[3] ask for the extended card WITH the example token
+    name:   Hello World Agent - Extended Edition
+    skills: [&#x27;Echo Bot&#x27;, &#x27;Echo Bot (Super Mode)&#x27;]
+</pre></details></section><section id="lab08"><p class="k">LAB 08</p><h2>Handling a job</h2><h3>What the video showed</h3>
+<p>You write an agent executor with two methods, <code>execute</code> and <code>cancel</code>. In <code>execute</code> you get or create the task, set it to working with a short status message, run your agent, add the result as an artifact and set it to completed. A streaming caller sees each step; a non-streaming caller gets the final task. A quick answer can be a single message, with no task.</p>
+<h3>Run it</h3>
+<pre><code>python lab08_executor.py
+</code></pre>
+<p>Sample output: <code>out/lab08.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code> the streaming caller receives four things in order: the new task (<code>SUBMITTED</code>), <code>WORKING</code> with "Processing request...", the artifact, then <code>COMPLETED</code> with "Request is completed!".</li>
+<li>Each of those lines comes from one line of <code>HelloExecutor.execute</code>: <code>enqueue_event(task)</code>, <code>update_status(WORKING)</code>, <code>add_artifact(...)</code>, <code>update_status(COMPLETED)</code>.</li>
+<li><code>[2]</code> the non-streaming caller sends the same message and gets one task, already completed, with the artifact inside. The SDK gathered the steps for it.</li>
+<li><code>[3]</code> for <code>"ping"</code> the executor enqueues a <code>Message</code> instead of a task, and the caller gets that message.</li>
+<li><code>[4]</code> lists the tasks in the store: only the two "hi" jobs are there. The "ping" reply made no task.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Delete the <code>update_status(state=TaskState.TASK_STATE_WORKING, ...)</code> call and see the streaming caller get one event fewer.</li>
+<li>Set <code>AgentCapabilities(streaming=False)</code> on the card. The SDK client then doesn't stream, so <code>[1]</code> prints a single completed task like <code>[2]</code>.</li>
+</ul>
+<details><summary>The code <code>lab08_executor.py</code></summary><pre>&quot;&quot;&quot;Lab 08 (video section s08): handling a job.
+
+You write an agent executor with two methods: execute (incoming messages) and
+cancel. The SDK&#x27;s request handler calls them and keeps tasks in a task store.
+execute: get or create the task -&gt; WORKING with a status message -&gt; run your
+agent -&gt; add its result as an artifact -&gt; COMPLETED. A streaming caller sees
+each step; a non-streaming caller gets the final task. A quick answer can be a
+single Message, and then no task is created.
+&quot;&quot;&quot;
+import asyncio, socket
+import uvicorn
+from starlette.applications import Starlette
+from a2a.client import ClientConfig, create_client
+from a2a.helpers import (get_artifact_text, get_message_text, new_task_from_user_message,
+                         new_text_message, new_text_part)
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.events import EventQueue
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, ListTasksRequest, Role,
+                       SendMessageRequest, TaskState)
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+
+
+class HelloAgent:                                 # stands in for an agent you already have
+    async def invoke(self, user_request: str) -&gt; str:   # (LangGraph, CrewAI, your own code...)
+        return f&#x27;Hello, World! I have received your request ({user_request})&#x27;
+
+
+class HelloExecutor(AgentExecutor):
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        query = get_message_text(context.message)
+        if query == &#x27;ping&#x27;:                       # quick answer, nothing to track: reply with a Message
+            await event_queue.enqueue_event(new_text_message(&#x27;pong&#x27;, role=Role.ROLE_AGENT))
+            return
+        task = context.current_task               # the task, if this message continues one
+        if not task:                              # no task yet: create one
+            task = new_task_from_user_message(context.message)
+            await event_queue.enqueue_event(task)
+        updater = TaskUpdater(event_queue=event_queue, task_id=task.id, context_id=task.context_id)
+        await updater.update_status(state=TaskState.TASK_STATE_WORKING,
+                                    message=new_text_message(&#x27;Processing request...&#x27;))
+        result = await HelloAgent().invoke(user_request=query)          # run your agent
+        await updater.add_artifact(parts=[new_text_part(text=result, media_type=&#x27;text/plain&#x27;)])
+        await updater.update_status(state=TaskState.TASK_STATE_COMPLETED,
+                                    message=new_text_message(&#x27;Request is completed!&#x27;))
+
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        raise NotImplementedError(&#x27;Cancel is not supported.&#x27;)         # lab 09 covers cancel
+
+
+card = AgentCard(
+    name=&#x27;Hello World Agent&#x27;, description=&#x27;Just a hello world agent&#x27;, version=&#x27;0.0.1&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=True),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;echo_bot&#x27;, name=&#x27;Echo Bot&#x27;, description=&#x27;Replies with a hello.&#x27;,
+                       tags=[&#x27;echo&#x27;], examples=[&#x27;hi&#x27;])])
+handler = DefaultRequestHandler(agent_executor=HelloExecutor(), task_store=InMemoryTaskStore(),
+                                agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+
+
+def describe(event) -&gt; str:                       # one line per thing the caller receives
+    kind = event.WhichOneof(&#x27;payload&#x27;)
+    if kind == &#x27;task&#x27;:
+        t = event.task
+        line = f&#x27;task          {TaskState.Name(t.status.state)}&#x27;
+        return line + (f&#x27;  artifact: &quot;{get_artifact_text(t.artifacts[0])}&quot;&#x27; if t.artifacts else &#x27;&#x27;)
+    if kind == &#x27;status_update&#x27;:
+        st = event.status_update.status
+        return f&#x27;status_update {TaskState.Name(st.state)}  &quot;{get_message_text(st.message)}&quot;&#x27;
+    if kind == &#x27;artifact_update&#x27;:
+        return f&#x27;artifact_update &quot;{get_artifact_text(event.artifact_update.artifact)}&quot;&#x27;
+    return f&#x27;message       &quot;{get_message_text(event.message)}&quot;  (no task created)&#x27;
+
+
+async def send(text: str, streaming: bool):
+    client = await create_client(card, client_config=ClientConfig(streaming=streaming))
+    request = SendMessageRequest(message=new_text_message(text, role=Role.ROLE_USER))
+    async for event in client.send_message(request):
+        print(&#x27;    &#x27; + describe(event))
+    await client.close()
+
+
+async def main():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+    print(&#x27;[1] streaming caller sends &quot;hi&quot;: every step, in order&#x27;)
+    await send(&#x27;hi&#x27;, streaming=True)
+    print(&#x27;[2] non-streaming caller sends &quot;hi&quot;: one final task&#x27;)
+    await send(&#x27;hi&#x27;, streaming=False)
+    print(&#x27;[3] caller sends &quot;ping&quot;: the agent answers with a single Message&#x27;)
+    await send(&#x27;ping&#x27;, streaming=False)
+    client = await create_client(card)
+    tasks = (await client.list_tasks(ListTasksRequest())).tasks
+    print(f&#x27;[4] tasks in the store: {len(tasks)} (the two &quot;hi&quot; jobs; &quot;ping&quot; made none)&#x27;)
+    await client.close()
+    server.should_exit = True
+    await serving
+
+
+asyncio.run(main())
+</pre></details>
+<details><summary>Sample output <code>out/lab08.txt</code></summary><pre class="out">[1] streaming caller sends &quot;hi&quot;: every step, in order
+    task          TASK_STATE_SUBMITTED
+    status_update TASK_STATE_WORKING  &quot;Processing request...&quot;
+    artifact_update &quot;Hello, World! I have received your request (hi)&quot;
+    status_update TASK_STATE_COMPLETED  &quot;Request is completed!&quot;
+[2] non-streaming caller sends &quot;hi&quot;: one final task
+    task          TASK_STATE_COMPLETED  artifact: &quot;Hello, World! I have received your request (hi)&quot;
+[3] caller sends &quot;ping&quot;: the agent answers with a single Message
+    message       &quot;pong&quot;  (no task created)
+[4] tasks in the store: 2 (the two &quot;hi&quot; jobs; &quot;ping&quot; made none)
+</pre></details></section><section id="lab09"><p class="k">LAB 09</p><h2>Stopping to ask, and cancels</h2><h3>What the video showed</h3>
+<p>When your agent needs more from the caller, set the task to input required with the question in the status message. The answer comes back on the same task and <code>execute</code> runs again. When a caller cancels, the SDK calls your <code>cancel</code> method. There you can try to stop the work and set the task to canceled, or refuse.</p>
+<h3>Run it</h3>
+<pre><code>python lab09_pause_and_cancel.py
+</code></pre>
+<p>Sample output: <code>out/lab09.txt</code>. It takes well under a second, even though the "long job" would sleep for 60 seconds: the cancel stops it.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code> the task stops at <code>TASK_STATE_INPUT_REQUIRED</code> and its status message is the question (the one from the official LangGraph currency sample).</li>
+<li><code>[2]</code> the answer <code>"EUR"</code> is sent with the same task ID (see <code>send(client, 'EUR', task)</code>); the same task ID then shows <code>COMPLETED</code> with the result.</li>
+<li><code>[3]</code> is way 1. <code>Converter.cancel</code> sets <code>TASK_STATE_CANCELED</code>, and the caller gets the canceled task back.</li>
+<li><code>[4]</code> is way 2. <code>RefusingConverter.cancel</code> raises <code>UnsupportedOperationError</code> (the 1.3.0 way of writing the LangGraph sample's refusal). What a2a-sdk 1.3.0 does with that: the caller gets <code>TaskNotCancelableError</code>, and the task is left <code>FAILED</code>. That is this SDK's behaviour, shown as it really runs.</li>
+<li>Both copies of the agent run in one Starlette app on two paths (<code>/stops</code>, <code>/refuses</code>) so you can compare them.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Make <code>RefusingConverter.cancel</code> raise <code>NotImplementedError('Cancel is not supported.')</code> like the Hello World sample. In 1.3.0 the caller then gets <code>InternalError</code> instead.</li>
+<li>Change the question text in the <code>INPUT_REQUIRED</code> branch, or answer <code>"JPY"</code> in step <code>[2]</code>.</li>
+</ul>
+<details><summary>The code <code>lab09_pause_and_cancel.py</code></summary><pre>&quot;&quot;&quot;Lab 09 (video section s09): stopping to ask, and cancels.
+
+If your agent needs more from the caller, set the task to INPUT_REQUIRED and
+put the question in the status message. The answer arrives as a new message on
+the same task, and execute runs again with that task.
+When a caller cancels, the SDK calls your cancel method. There you can try to
+stop the work and set CANCELED, or refuse (as the official samples do).
+&quot;&quot;&quot;
+import asyncio, logging, socket
+import uvicorn
+from starlette.applications import Starlette
+from a2a.client import ClientConfig, create_client
+from a2a.helpers import (get_artifact_text, get_message_text, new_task_from_user_message,
+                         new_text_message, new_text_part)
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.events import EventQueue
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, CancelTaskRequest,
+                       GetTaskRequest, Role, SendMessageRequest, TaskState)
+from a2a.utils.errors import UnsupportedOperationError
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+logging.getLogger(&#x27;a2a&#x27;).setLevel(logging.CRITICAL)   # the SDK logs a refused cancel with a full traceback
+
+
+class Converter(AgentExecutor):
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        text = get_message_text(context.message)
+        task = context.current_task
+        if not task:
+            task = new_task_from_user_message(context.message)
+            await event_queue.enqueue_event(task)
+        up = TaskUpdater(event_queue=event_queue, task_id=task.id, context_id=task.context_id)
+        await up.update_status(state=TaskState.TASK_STATE_WORKING)
+        if text == &#x27;Convert every price list&#x27;:        # a long job (used for the cancel demo)
+            await asyncio.sleep(60)
+        elif text == &#x27;Convert 100 USD&#x27;:               # target currency missing: stop and ask
+            await up.update_status(state=TaskState.TASK_STATE_INPUT_REQUIRED, message=new_text_message(
+                &#x27;To which currency would you like to convert?&#x27;, task_id=task.id, context_id=task.context_id))
+        else:                                         # the answer, on the same task
+            await up.add_artifact(parts=[new_text_part(f&#x27;100 USD = 92 {text} (example rate)&#x27;)])
+            await up.update_status(state=TaskState.TASK_STATE_COMPLETED)
+
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        # Way 1: try to stop the work, then set the task to CANCELED.
+        # (The SDK also stops the running execute call after this method returns.)
+        up = TaskUpdater(event_queue=event_queue, task_id=context.task_id, context_id=context.context_id)
+        await up.update_status(state=TaskState.TASK_STATE_CANCELED)
+
+
+class RefusingConverter(Converter):
+    async def cancel(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        # Way 2: refuse. In a2a-sdk 1.3.0 the LangGraph sample&#x27;s ServerError(error=UnsupportedOperationError())
+        # is written as a plain raise. What 1.3.0 then does (see step [4] output): it answers the caller
+        # with TaskNotCancelableError and marks the task FAILED. That is this SDK&#x27;s choice, not a spec rule.
+        raise UnsupportedOperationError()
+
+
+def card_for(path):
+    return AgentCard(name=&#x27;Currency Agent&#x27;, description=&#x27;Converts amounts.&#x27;, version=&#x27;1.0.0&#x27;,
+                     default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+                     capabilities=AgentCapabilities(streaming=False),
+                     skills=[AgentSkill(id=&#x27;convert&#x27;, name=&#x27;Convert currency&#x27;, tags=[&#x27;currency&#x27;],
+                                        description=&#x27;Converts an amount.&#x27;, examples=[&#x27;Convert 100 USD&#x27;])],
+                     supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL + path,
+                                                          protocol_version=&#x27;1.0&#x27;)])
+
+
+def routes(executor, path):                     # one app, two copies of the agent: one per cancel choice
+    h = DefaultRequestHandler(agent_executor=executor, task_store=InMemoryTaskStore(), agent_card=card_for(path))
+    return create_jsonrpc_routes(h, path)
+
+
+app = Starlette(routes=[*routes(Converter(), &#x27;/stops&#x27;), *routes(RefusingConverter(), &#x27;/refuses&#x27;)])
+state = TaskState.Name
+
+
+async def send(client, text, task=None):
+    msg = new_text_message(text, role=Role.ROLE_USER, task_id=task.id if task else None,
+                           context_id=task.context_id if task else None)
+    async for event in client.send_message(SendMessageRequest(message=msg)):
+        return event.task
+
+
+async def main():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;critical&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+    client = await create_client(card_for(&#x27;/stops&#x27;), client_config=ClientConfig(streaming=False))
+    print(&#x27;[1] send &quot;Convert 100 USD&quot;&#x27;)                       # the job is missing the target currency
+    task = await send(client, &#x27;Convert 100 USD&#x27;)
+    print(f&#x27;    task {task.id[:8]}  {state(task.status.state)}: &quot;{get_message_text(task.status.message)}&quot;&#x27;)
+    print(&#x27;[2] answer &quot;EUR&quot; with the same task ID&#x27;)
+    task = await send(client, &#x27;EUR&#x27;, task)
+    print(f&#x27;    task {task.id[:8]}  {state(task.status.state)}: {get_artifact_text(task.artifacts[0])}&#x27;)
+
+    print(&#x27;[3] start a long job, then cancel it (executor stops the work)&#x27;)
+    quick = await create_client(card_for(&#x27;/stops&#x27;), client_config=ClientConfig(streaming=False, polling=True))
+    job = await send(quick, &#x27;Convert every price list&#x27;)        # polling: returns without waiting
+    print(f&#x27;    task {job.id[:8]}  {state(job.status.state)}&#x27;)
+    done = await quick.cancel_task(CancelTaskRequest(id=job.id))
+    print(f&#x27;    after cancel: {state(done.status.state)}&#x27;)
+
+    print(&#x27;[4] same, but this executor refuses to cancel&#x27;)                 # way 2
+    refuser = await create_client(card_for(&#x27;/refuses&#x27;), client_config=ClientConfig(streaming=False, polling=True))
+    job = await send(refuser, &#x27;Convert every price list&#x27;)
+    try:
+        await refuser.cancel_task(CancelTaskRequest(id=job.id))
+    except Exception as e:
+        print(f&#x27;    caller gets: {type(e).__name__}: {e}&#x27;)
+    left = await refuser.get_task(GetTaskRequest(id=job.id))
+    print(f&#x27;    task state the SDK leaves behind: {state(left.status.state)}&#x27;)
+
+    await asyncio.gather(client.close(), quick.close(), refuser.close())
+    server.should_exit = True
+    await serving
+
+
+asyncio.run(main())
+</pre></details>
+<details><summary>Sample output <code>out/lab09.txt</code></summary><pre class="out">[1] send &quot;Convert 100 USD&quot;
+    task 0134c3e6  TASK_STATE_INPUT_REQUIRED: &quot;To which currency would you like to convert?&quot;
+[2] answer &quot;EUR&quot; with the same task ID
+    task 0134c3e6  TASK_STATE_COMPLETED: 100 USD = 92 EUR (example rate)
+[3] start a long job, then cancel it (executor stops the work)
+    task 70cfa8a7  TASK_STATE_SUBMITTED
+    after cancel: TASK_STATE_CANCELED
+[4] same, but this executor refuses to cancel
+    caller gets: TaskNotCancelableError: Task cannot be canceled
+    task state the SDK leaves behind: TASK_STATE_FAILED
+</pre></details></section><section id="lab10"><p class="k">LAB 10</p><h2>Serving over more than one binding</h2><h3>What the video showed</h3>
+<p>A binding is the concrete format the A2A calls travel in: JSON-RPC, gRPC or HTTP+JSON. You can offer several, list them in your card with your preferred one first, and a caller uses the first one on that list that it supports. The SDK's routes plug into an ordinary web app.</p>
+<h3>Run it</h3>
+<pre><code>python lab10_bindings.py
+</code></pre>
+<p>Sample output: <code>out/lab10.txt</code>. gRPC is left out: the SDK's gRPC handler needs the <code>grpcio</code> package, which this lab doesn't install.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[card]</code>: two interfaces in order, JSON-RPC first (preferred), HTTP+JSON second. Both are served by the same <code>handler</code> through <code>create_jsonrpc_routes</code> and <code>create_rest_routes</code>.</li>
+<li><code>[A]</code> lists HTTP+JSON first in its own preferences, but the card's order decides, so the server sees <code>POST /jsonrpc</code>.</li>
+<li><code>[B]</code> only supports HTTP+JSON, so it takes the second interface: the server sees <code>POST /rest/message:send</code>.</li>
+<li>All three replies are the same. Same executor, same result, whichever binding carried it.</li>
+<li><code>log_requests</code> is ordinary Starlette middleware. Because the SDK gives you routes, logging (and authentication, lab 20) stay under your control.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Swap the two <code>AgentInterface</code> entries in the card. Caller A and caller B then both use HTTP+JSON; caller C still uses JSON-RPC.</li>
+<li>Add <code>use_client_preference=True</code> to the <code>ClientConfig</code> in <code>caller()</code>. Caller A then follows its own list and uses HTTP+JSON. (The SDK's own docs recommend the server's order in most cases.)</li>
+</ul>
+<details><summary>The code <code>lab10_bindings.py</code></summary><pre>&quot;&quot;&quot;Lab 10 (video section s10): serving your agent over more than one binding.
+
+A binding is the concrete format the A2A calls are sent in: JSON-RPC, gRPC or
+HTTP+JSON. You can offer one or several; each must behave the same. You list
+them in the card&#x27;s supported interfaces, preferred first, and a caller uses the
+first one on that list it supports. Here one agent is served over JSON-RPC and
+HTTP+JSON. (The SDK&#x27;s gRPC handler needs the grpcio package, so it is left out.)
+The SDK&#x27;s routes plug into an ordinary Starlette app, so the logging below is ours.
+&quot;&quot;&quot;
+import asyncio, socket
+import uvicorn
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from a2a.client import ClientConfig, create_client
+from a2a.helpers import (get_artifact_text, get_message_text, new_task_from_user_message,
+                         new_text_message, new_text_part)
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.events import EventQueue
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes, create_rest_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Role,
+                       SendMessageRequest, TaskState)
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+
+
+class HelloExecutor(AgentExecutor):              # the same executor serves every binding
+    async def execute(self, context: RequestContext, event_queue: EventQueue) -&gt; None:
+        task = context.current_task or new_task_from_user_message(context.message)
+        if not context.current_task:
+            await event_queue.enqueue_event(task)
+        up = TaskUpdater(event_queue=event_queue, task_id=task.id, context_id=task.context_id)
+        await up.add_artifact(parts=[new_text_part(f&#x27;Hello! ({get_message_text(context.message)})&#x27;)])
+        await up.update_status(state=TaskState.TASK_STATE_COMPLETED)
+
+    async def cancel(self, context, event_queue):
+        raise NotImplementedError(&#x27;Cancel is not supported.&#x27;)
+
+
+card = AgentCard(
+    name=&#x27;Hello World Agent&#x27;, description=&#x27;Just a hello world agent&#x27;, version=&#x27;0.0.1&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False),
+    supported_interfaces=[                       # ordered: the first entry is the preferred one
+        AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=f&#x27;{URL}/jsonrpc&#x27;, protocol_version=&#x27;1.0&#x27;),
+        AgentInterface(protocol_binding=&#x27;HTTP+JSON&#x27;, url=f&#x27;{URL}/rest&#x27;, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;echo_bot&#x27;, name=&#x27;Echo Bot&#x27;, description=&#x27;Replies with a hello.&#x27;,
+                       tags=[&#x27;echo&#x27;], examples=[&#x27;hi&#x27;])])
+handler = DefaultRequestHandler(agent_executor=HelloExecutor(), task_store=InMemoryTaskStore(),
+                                agent_card=card)
+
+
+async def log_requests(request, call_next):      # our own logging: which route did each call hit?
+    print(f&#x27;    server saw: {request.method} {request.url.path}&#x27;)
+    return await call_next(request)
+
+app = Starlette(
+    routes=[*create_agent_card_routes(card),
+            *create_jsonrpc_routes(handler, &#x27;/jsonrpc&#x27;),             # JSON-RPC binding
+            *create_rest_routes(handler, path_prefix=&#x27;/rest&#x27;)],     # HTTP+JSON (REST) binding
+    middleware=[Middleware(BaseHTTPMiddleware, dispatch=log_requests)])
+
+
+async def caller(label: str, supports: list[str]):
+    print(f&#x27;[{label}] caller supports {supports}&#x27;)
+    client = await create_client(card, client_config=ClientConfig(
+        streaming=False, supported_protocol_bindings=supports))
+    request = SendMessageRequest(message=new_text_message(&#x27;hi&#x27;, role=Role.ROLE_USER))
+    async for event in client.send_message(request):
+        task = event.task
+        print(f&#x27;    reply: {TaskState.Name(task.status.state)}  &quot;{get_artifact_text(task.artifacts[0])}&quot;&#x27;)
+    await client.close()
+
+
+async def main():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+    print(&#x27;[card] supported interfaces, in order:&#x27;)
+    for i, iface in enumerate(card.supported_interfaces, 1):
+        print(f&#x27;    {i}. {iface.protocol_binding:&lt;10} {iface.url}&#x27;)
+    await caller(&#x27;A&#x27;, [&#x27;HTTP+JSON&#x27;, &#x27;JSONRPC&#x27;])  # supports both: the card&#x27;s order decides, so JSON-RPC
+    await caller(&#x27;B&#x27;, [&#x27;HTTP+JSON&#x27;])             # supports only HTTP+JSON: takes that one
+    await caller(&#x27;C&#x27;, [&#x27;JSONRPC&#x27;])               # supports only JSON-RPC
+    server.should_exit = True
+    await serving
+
+
+asyncio.run(main())
+</pre></details>
+<details><summary>Sample output <code>out/lab10.txt</code></summary><pre class="out">[card] supported interfaces, in order:
+    1. JSONRPC    http://127.0.0.1:57897/jsonrpc
+    2. HTTP+JSON  http://127.0.0.1:57897/rest
+[A] caller supports [&#x27;HTTP+JSON&#x27;, &#x27;JSONRPC&#x27;]
+    server saw: POST /jsonrpc
+    reply: TASK_STATE_COMPLETED  &quot;Hello! (hi)&quot;
+[B] caller supports [&#x27;HTTP+JSON&#x27;]
+    server saw: POST /rest/message:send
+    reply: TASK_STATE_COMPLETED  &quot;Hello! (hi)&quot;
+[C] caller supports [&#x27;JSONRPC&#x27;]
+    server saw: POST /jsonrpc
+    reply: TASK_STATE_COMPLETED  &quot;Hello! (hi)&quot;
+</pre></details></section><section id="lab11"><p class="k">LAB 11</p><h2>Finding an agent to call</h2><h3>What the video showed</h3>
+<p>Before your agent hands a job to another agent, it needs that agent's card. The standard place to look is the agent's own domain at <code>/.well-known/agent-card.json</code>; a registry or your own configuration are other ways to get it. Your agent reads the card the way it will use it, then creates its client from the card.</p>
+<h3>Run it</h3>
+<pre><code>python lab11_discover.py
+</code></pre>
+<p>It starts a stand-in agent on a free local port, reads its card, creates a client and stops. Sample output: <code>out/lab11.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code>: <code>A2ACardResolver(httpx_client=..., base_url=URL).get_agent_card()</code> fetches the card from the well-known path. You give it only the base address.</li>
+<li><code>[2]</code>: the skill check looks for a skill tagged <code>route-planning</code>. If no skill matches the job, this agent is the wrong one to call.</li>
+<li><code>[3]</code>: content types. A skill can list its own <code>input_modes</code>/<code>output_modes</code>; when it doesn't, the card's <code>default_input_modes</code>/<code>default_output_modes</code> apply.</li>
+<li><code>[4]</code>: <code>capabilities.streaming</code> and <code>capabilities.push_notifications</code> tell you whether you can stream or get callbacks from this agent.</li>
+<li><code>[5]</code>: the card's <code>security_requirements</code> point at <code>security_schemes</code>. Here it's OpenID Connect with scopes <code>openid</code> and <code>profile</code>. Getting that token is done with the identity provider, outside A2A. (The stand-in doesn't check the token. A real agent would.)</li>
+<li><code>[6]</code>: the card lists <code>HTTP+JSON</code> first and <code>JSONRPC</code> second. The client here supports only JSON-RPC (the SDK default), so it skips the first entry and uses the first one it supports. The code reads the private <code>_transport</code> attribute only to show you which one it picked.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Change <code>JOB_TAG</code> to <code>'translation'</code> and run again: step <code>[2]</code> reports no matching skill.</li>
+<li>In <code>create_client</code>, pass <code>ClientConfig(..., supported_protocol_bindings=['HTTP+JSON', 'JSONRPC'])</code>. The client now supports both, so it takes the card's first entry, <code>RestTransport</code> at <code>/rest</code>.</li>
+</ul>
+<details><summary>The code <code>lab11_discover.py</code></summary><pre>&quot;&quot;&quot;Lab 11 (video section s11): finding an agent to call.
+
+Your agent fetches the remote agent&#x27;s card from its well-known path, reads it
+the way it will use it (skills, content types, capabilities, sign-in), then
+creates its client from the card. Run: python lab11_discover.py
+&quot;&quot;&quot;
+import asyncio, socket
+import httpx, uvicorn
+from starlette.applications import Starlette
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes, create_rest_routes
+from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill,
+                       OpenIdConnectSecurityScheme, SecurityRequirement, SecurityScheme, StringList)
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+
+# --- your agent: the client side ---
+JOB_TAG, HAVE, NEED = &#x27;route-planning&#x27;, &#x27;text/plain&#x27;, &#x27;application/json&#x27;
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        # [1] The standard place to look: the agent&#x27;s own domain, at the well-known path.
+        #     (A registry or your own config are other ways a card can reach you.)
+        print(f&#x27;[1] fetch the card from {AGENT_CARD_WELL_KNOWN_PATH}&#x27;)
+        card = await A2ACardResolver(httpx_client=http, base_url=URL).get_agent_card()
+        print(f&#x27;    got: {card.name} {card.version}&#x27;)
+
+        # [2] Do its skills match the job?
+        skill = next((s for s in card.skills if JOB_TAG in s.tags), None)
+        print(f&#x27;[2] skill for &quot;{JOB_TAG}&quot;: {skill.name if skill else &quot;none, look elsewhere&quot;}&#x27;)
+
+        # [3] Does it take the content you have, and return what you need?
+        #     A skill may list its own modes; if it doesn&#x27;t, the card&#x27;s defaults apply.
+        ins = list(skill.input_modes or card.default_input_modes)
+        outs = list(skill.output_modes or card.default_output_modes)
+        print(f&#x27;[3] takes {HAVE}: {HAVE in ins}   returns {NEED}: {NEED in outs}&#x27;)
+
+        # [4] Streaming or push notifications, if you&#x27;ll want them.
+        caps = card.capabilities
+        print(f&#x27;[4] streaming: {caps.streaming}   push notifications: {caps.push_notifications}&#x27;)
+
+        # [5] Which sign-in does it require? The card names the schemes; getting
+        #     a token from that provider happens outside A2A.
+        for req in card.security_requirements:
+            for name, scopes in req.schemes.items():
+                scheme = card.security_schemes[name]
+                print(f&#x27;[5] sign-in: {scheme.WhichOneof(&quot;scheme&quot;)} &quot;{name}&quot;, scopes {list(scopes.list)}&#x27;)
+
+        # [6] Create the client from the card. It walks the card&#x27;s interfaces in
+        #     order and uses the first one this client supports (JSON-RPC only, here).
+        print(&#x27;[6] card interfaces:&#x27;, [i.protocol_binding for i in card.supported_interfaces])
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=False))
+        t = client._transport          # private attribute, read only to show the choice
+        print(f&#x27;    client picked: {type(t).__name__} at {t.url}&#x27;)
+        await client.close()
+
+# --- the remote agent (stand-in) ---
+# It only needs to serve its card for this lab. It declares an OpenID Connect
+# sign-in but does not check it: a real agent would.
+class Idle(AgentExecutor):
+    async def execute(self, context, event_queue): pass
+    async def cancel(self, context, event_queue): pass
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(
+    name=&#x27;Route Planner&#x27;, description=&#x27;Plans routes between places.&#x27;, version=&#x27;1.2.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;application/json&#x27;, &#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=True, push_notifications=True),
+    supported_interfaces=[  # preference order: REST first, then JSON-RPC
+        AgentInterface(protocol_binding=&#x27;HTTP+JSON&#x27;, url=f&#x27;{URL}/rest&#x27;, protocol_version=&#x27;1.0&#x27;),
+        AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    security_schemes={&#x27;oidc&#x27;: SecurityScheme(open_id_connect_security_scheme=OpenIdConnectSecurityScheme(
+        open_id_connect_url=&#x27;https://accounts.example.com/.well-known/openid-configuration&#x27;))},
+    security_requirements=[SecurityRequirement(schemes={&#x27;oidc&#x27;: StringList(list=[&#x27;openid&#x27;, &#x27;profile&#x27;])})],
+    skills=[AgentSkill(id=&#x27;plan-route&#x27;, name=&#x27;Plan a route&#x27;, description=&#x27;Plans a route between two places.&#x27;,
+                       tags=[&#x27;route-planning&#x27;, &#x27;maps&#x27;], examples=[&#x27;Fastest route from Lagos to Ibadan&#x27;])])
+handler = DefaultRequestHandler(agent_executor=Idle(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;),
+                        *create_rest_routes(handler, path_prefix=&#x27;/rest&#x27;)])
+
+# --- run both, then shut down ---
+async def run():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started: await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose(); server.should_exit = True; await serving
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab11.txt</code></summary><pre class="out">[1] fetch the card from /.well-known/agent-card.json
+    got: Route Planner 1.2.0
+[2] skill for &quot;route-planning&quot;: Plan a route
+[3] takes text/plain: True   returns application/json: True
+[4] streaming: True   push notifications: True
+[5] sign-in: open_id_connect_security_scheme &quot;oidc&quot;, scopes [&#x27;openid&#x27;, &#x27;profile&#x27;]
+[6] card interfaces: [&#x27;HTTP+JSON&#x27;, &#x27;JSONRPC&#x27;]
+    client picked: JsonRpcTransport at http://127.0.0.1:59711
+</pre></details></section><section id="lab12"><p class="k">LAB 12</p><h2>Sending the job</h2><h3>What the video showed</h3>
+<p>A job goes out as a message made of parts: text, a file (as bytes or a link) or structured data, each with an optional media type. What comes back is either a Message or a Task. The remote agent decides which, so your code handles both. By default the call waits; with <code>returnImmediately</code> you get the task back as soon as it exists and follow it yourself. <code>acceptedOutputModes</code> tells the agent which media types you accept.</p>
+<h3>Run it</h3>
+<pre><code>python lab12_message_or_task.py
+</code></pre>
+<p>Sample output: <code>out/lab12.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>show(reply)</code> is the "handle both" code: <code>reply.HasField('message')</code> means a direct answer with nothing to track; otherwise <code>reply.task</code> has an <code>id</code> and a <code>context_id</code>.</li>
+<li><code>[1]</code>: a plain question gets a Message back. That was the stand-in's choice; another agent could have made a task.</li>
+<li><code>[2]</code>: one message, three parts: <code>text</code>, <code>raw</code> (the image bytes, <code>image/png</code>, with a filename) and <code>data</code>. Use <code>new_url_part(...)</code> instead of <code>new_raw_part(...)</code> to send a file as a link.</li>
+<li><code>[3]</code>: the default call took about 1.2 s and came back <code>COMPLETED</code>. It waits until the task finishes or pauses.</li>
+<li><code>[4]</code>: with <code>return_immediately=True</code> the task came back at once as <code>SUBMITTED</code>. The loop then checks it with <code>get_task</code> until it is final (<code>SUBMITTED -&gt; WORKING -&gt; COMPLETED</code>). Checking is one way to follow a task; streaming and push notifications are covered in labs 17 and 18.</li>
+<li><code>[3]</code> vs <code>[4]</code>: the stand-in reads <code>accepted_output_modes</code> and returns a <code>data</code> part for <code>application/json</code> and a <code>text</code> part for <code>text/plain</code>. Agents SHOULD use this to tailor their output. It's a hint, not a guarantee.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>In <code>[3]</code>, set <code>return_immediately=True</code> and watch the <code>after ...s</code> time drop to 0.0 and the state change to <code>SUBMITTED</code>.</li>
+<li>Remove the <code>new_raw_part(...)</code> line from the job and see the stand-in answer with a Message instead of a Task.</li>
+</ul>
+<details><summary>The code <code>lab12_message_or_task.py</code></summary><pre>&quot;&quot;&quot;Lab 12 (video section s12): sending the job.
+
+A message is made of parts (text, a file as bytes or a link, structured data).
+What comes back is either a Message or a Task; the remote agent decides, so the
+client handles both. The default call waits; returnImmediately gets the task back
+at once. acceptedOutputModes lists the media types you accept.
+Run: python lab12_message_or_task.py
+&quot;&quot;&quot;
+import asyncio, socket, time
+import httpx, uvicorn
+from starlette.applications import Starlette
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import (new_data_part, new_message, new_raw_part, new_task_from_user_message,
+                         new_text_message, new_text_part)
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, GetTaskRequest,
+                       Role, SendMessageConfiguration, SendMessageRequest, TaskState)
+
+# --- your agent: the client side ---
+FINAL = {TaskState.TASK_STATE_COMPLETED, TaskState.TASK_STATE_FAILED,
+         TaskState.TASK_STATE_CANCELED, TaskState.TASK_STATE_REJECTED}
+PAUSED = {TaskState.TASK_STATE_INPUT_REQUIRED, TaskState.TASK_STATE_AUTH_REQUIRED}
+st = TaskState.Name
+
+def show(reply):
+    &quot;&quot;&quot;The answer is a Message (nothing to track) or a Task (track it by id).&quot;&quot;&quot;
+    if reply.HasField(&#x27;message&#x27;):
+        return f&#x27;Message: &quot;{reply.message.parts[0].text}&quot;&#x27;
+    t = reply.task
+    return f&#x27;Task id={t.id[:8]}.. contextId={t.context_id[:8]}.. state={st(t.status.state)}&#x27;
+
+async def send(client, msg, **config):
+    req = SendMessageRequest(message=msg, configuration=SendMessageConfiguration(**config))
+    return [r async for r in client.send_message(req)][-1]   # non-streaming: one reply
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        card = await A2ACardResolver(http, URL).get_agent_card()
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=False))
+
+        print(&#x27;[1] a quick question, nothing to track&#x27;)
+        print(&#x27;   &#x27;, show(await send(client, new_text_message(&#x27;Are you open today?&#x27;, role=Role.ROLE_USER))))
+
+        # One message, three parts: the request, the image it&#x27;s about, and some data.
+        job = lambda: new_message(role=Role.ROLE_USER, parts=[
+            new_text_part(&#x27;Analyze this image and highlight any faces.&#x27;),
+            new_raw_part(b&#x27;\x89PNG\r\n\x1a\n...&#x27;, media_type=&#x27;image/png&#x27;, filename=&#x27;input_image.png&#x27;),
+            new_data_part({&#x27;max_faces&#x27;: 5})])
+        print(&#x27;[2] a job: parts =&#x27;, [p.WhichOneof(&#x27;content&#x27;) for p in job().parts])
+
+        print(&#x27;[3] default call: waits until the task finishes (or pauses)&#x27;)
+        t0 = time.time()
+        reply = await send(client, job(), accepted_output_modes=[&#x27;application/json&#x27;])
+        print(f&#x27;    after {time.time() - t0:.1f}s:&#x27;, show(reply))
+        print(&#x27;    accepted application/json -&gt; artifact part:&#x27;, reply.task.artifacts[0].parts[0].WhichOneof(&#x27;content&#x27;))
+
+        print(&#x27;[4] returnImmediately: the task comes back as soon as it exists&#x27;)
+        t0 = time.time()
+        reply = await send(client, job(), return_immediately=True, accepted_output_modes=[&#x27;text/plain&#x27;])
+        print(f&#x27;    after {time.time() - t0:.1f}s:&#x27;, show(reply))
+        task, seen = reply.task, []
+        while task.status.state not in FINAL | PAUSED:    # follow it: here, by checking
+            seen.append(st(task.status.state))
+            await asyncio.sleep(0.3)
+            task = await client.get_task(GetTaskRequest(id=task.id))
+        print(&#x27;    states seen while checking:&#x27;, &#x27; -&gt; &#x27;.join(dict.fromkeys(seen + [st(task.status.state)])))
+        print(&#x27;    accepted text/plain -&gt; artifact part:&#x27;, task.artifacts[0].parts[0].WhichOneof(&#x27;content&#x27;),
+              f&#x27;&quot;{task.artifacts[0].parts[0].text}&quot;&#x27;)
+        await client.close()
+
+# --- the remote agent (stand-in) ---
+# Its choice: a message with no file gets a direct Message; a message with a file
+# becomes a Task. It shapes its result to the caller&#x27;s accepted output modes.
+class Analyzer(AgentExecutor):
+    async def execute(self, ctx, q):
+        if not any(p.raw for p in ctx.message.parts):
+            await q.enqueue_event(new_text_message(&#x27;Yes, until 18:00.&#x27;, context_id=ctx.context_id))
+            return
+        task = new_task_from_user_message(ctx.message)   # state: SUBMITTED
+        await q.enqueue_event(task)
+        up = TaskUpdater(q, task.id, task.context_id)
+        await asyncio.sleep(0.4); await up.start_work()
+        await asyncio.sleep(0.8)
+        modes = list(ctx.configuration.accepted_output_modes) if ctx.configuration else []
+        if &#x27;application/json&#x27; in modes or not modes:
+            part = new_data_part({&#x27;faces&#x27;: 2}, media_type=&#x27;application/json&#x27;)
+        else:
+            part = new_text_part(&#x27;2 faces found.&#x27;, media_type=&#x27;text/plain&#x27;)
+        await up.add_artifact([part], name=&#x27;faces&#x27;)
+        await up.complete()
+    async def cancel(self, ctx, q): pass
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(name=&#x27;Image Analyzer&#x27;, description=&#x27;Finds faces in images.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;, &#x27;image/png&#x27;], default_output_modes=[&#x27;application/json&#x27;, &#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;faces&#x27;, name=&#x27;Find faces&#x27;, description=&#x27;Finds faces in an image.&#x27;, tags=[&#x27;vision&#x27;])])
+handler = DefaultRequestHandler(agent_executor=Analyzer(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+
+# --- run both, then shut down ---
+async def run():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started: await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose(); server.should_exit = True; await serving
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab12.txt</code></summary><pre class="out">[1] a quick question, nothing to track
+    Message: &quot;Yes, until 18:00.&quot;
+[2] a job: parts = [&#x27;text&#x27;, &#x27;raw&#x27;, &#x27;data&#x27;]
+[3] default call: waits until the task finishes (or pauses)
+    after 1.2s: Task id=f9cbe783.. contextId=ca05171c.. state=TASK_STATE_COMPLETED
+    accepted application/json -&gt; artifact part: data
+[4] returnImmediately: the task comes back as soon as it exists
+    after 0.0s: Task id=9860c91b.. contextId=a1bf55f3.. state=TASK_STATE_SUBMITTED
+    states seen while checking: TASK_STATE_SUBMITTED -&gt; TASK_STATE_WORKING -&gt; TASK_STATE_COMPLETED
+    accepted text/plain -&gt; artifact part: text &quot;2 faces found.&quot;
+</pre></details></section><section id="lab13"><p class="k">LAB 13</p><h2>The states your code handles</h2><h3>What the video showed</h3>
+<p>Once you have a task, your code branches on its state, in four cases. Keep waiting: submitted, working. Paused, needs you: input required, auth required. Collect: completed. It's over: failed, canceled, rejected. Completed, failed, canceled and rejected are final, and a message sent to a final task gets an error. A waiting call also returns at a pause, not only at the end.</p>
+<h3>Run it</h3>
+<pre><code>python lab13_states.py
+</code></pre>
+<p>It takes about 6 seconds. Sample output: <code>out/lab13.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>follow()</code> is the four-way switch. <code>KEEP_WAITING</code>, <code>PAUSED</code>, <code>COMPLETED</code> and <code>OVER</code> match the four cases in the video.</li>
+<li><code>[1]</code>: six jobs, one per path. Each line shows the states the loop saw and what it did: <code>collect</code>, <code>paused, needs you</code> (with the question from the status message), or <code>it's over</code>.</li>
+<li>The <code>slow</code> job is cancelled by the client while it's <code>WORKING</code>, so it ends <code>CANCELED</code>.</li>
+<li><code>[2]</code>: a default (waiting) call on a job that asks a question returns after about 0.7 s at <code>INPUT_REQUIRED</code>, before the job is done. Your code has to handle pauses as well as endings.</li>
+<li><code>[3]</code>: a message sent to the completed task is refused with <code>UnsupportedOperationError ... is in terminal state: TASK_STATE_COMPLETED</code>.</li>
+<li>The two <code>logging</code> lines near the end hide a cleanup traceback that a2a-sdk 1.3.0 prints on the server side after <code>[3]</code>. They don't change what the client sees.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>In <code>[3]</code>, send the message to the paused task from <code>[2]</code> (<code>task_id=task.id, context_id=task.context_id</code>) instead of <code>done</code>. It's accepted, and the same task completes, because a paused task isn't final.</li>
+<li>Remove <code>'slow'</code> from the job list and <code>return_immediately=True</code> from the first loop. The calls now wait, so each line starts at the final or paused state. (<code>'slow'</code> is removed because a waiting call on it would block until the job ends.)</li>
+</ul>
+<details><summary>The code <code>lab13_states.py</code></summary><pre>&quot;&quot;&quot;Lab 13 (video section s13): the states your code handles.
+
+Your code branches on the task&#x27;s state, in four cases:
+  keep waiting (submitted, working) · paused, needs you (input required, auth required)
+  collect (completed) · it&#x27;s over (failed, canceled, rejected).
+Completed, failed, canceled and rejected are final: a message sent to a final task
+gets an error. A waiting call returns at a pause, not only at the end.
+Run: python lab13_states.py
+&quot;&quot;&quot;
+import asyncio, logging, socket, time
+import httpx, uvicorn
+from starlette.applications import Starlette
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import get_message_text, new_task_from_user_message, new_text_message, new_text_part
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, CancelTaskRequest,
+                       GetTaskRequest, Role, SendMessageConfiguration, SendMessageRequest, TaskState as S)
+
+# --- your agent: the client side ---
+KEEP_WAITING = {S.TASK_STATE_SUBMITTED, S.TASK_STATE_WORKING}
+PAUSED = {S.TASK_STATE_INPUT_REQUIRED, S.TASK_STATE_AUTH_REQUIRED}
+OVER = {S.TASK_STATE_FAILED, S.TASK_STATE_CANCELED, S.TASK_STATE_REJECTED}
+name = lambda s: S.Name(s).removeprefix(&#x27;TASK_STATE_&#x27;)
+
+async def follow(client, task, stop=False):
+    &quot;&quot;&quot;The four-way switch. Returns the states seen and what the code did.&quot;&quot;&quot;
+    seen = []
+    while True:
+        s = task.status.state
+        if not seen or seen[-1] != name(s): seen.append(name(s))
+        if s in KEEP_WAITING:                       # keep waiting: check again shortly
+            if stop and s == S.TASK_STATE_WORKING:  # (for the &#x27;slow&#x27; job, we cancel it here)
+                await client.cancel_task(CancelTaskRequest(id=task.id))
+            await asyncio.sleep(0.2)
+            task = await client.get_task(GetTaskRequest(id=task.id)); continue
+        if s in PAUSED:                             # can&#x27;t finish until you act
+            return seen, f&#x27;paused, needs you: &quot;{get_message_text(task.status.message)}&quot;&#x27;
+        if s == S.TASK_STATE_COMPLETED:             # collect the artifacts
+            return seen, f&#x27;collect: {[a.name for a in task.artifacts]}&#x27;
+        if s in OVER:                               # error, stopped, or turned down
+            why = get_message_text(task.status.message) if task.status.HasField(&#x27;message&#x27;) else &#x27;&#x27;
+            return seen, f&quot;it&#x27;s over {why}&quot;.rstrip()
+
+async def send(client, text, **config):
+    req = SendMessageRequest(message=new_text_message(text, role=Role.ROLE_USER),
+                             configuration=SendMessageConfiguration(**config))
+    return [r async for r in client.send_message(req)][-1].task
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        card = await A2ACardResolver(http, URL).get_agent_card()
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=False))
+
+        print(&#x27;[1] one loop, every state (each job sent with returnImmediately, then checked)&#x27;)
+        done = None
+        for job in [&#x27;summarise Q3&#x27;, &#x27;ask&#x27;, &#x27;login&#x27;, &#x27;break&#x27;, &#x27;refuse&#x27;, &#x27;slow&#x27;]:
+            task = await send(client, job, return_immediately=True)
+            seen, action = await follow(client, task, stop=(job == &#x27;slow&#x27;))
+            print(f&#x27;    {job:&lt;13} {&quot; &gt; &quot;.join(seen):&lt;36} -&gt; {action}&#x27;)
+            done = done or (task if job == &#x27;summarise Q3&#x27; else None)
+
+        print(&#x27;[2] a waiting call returns at a pause, not only at the end&#x27;)
+        t0 = time.time()
+        task = await send(client, &#x27;ask&#x27;)            # default call: waits
+        print(f&#x27;    returned after {time.time() - t0:.1f}s with state {name(task.status.state)}&#x27;)
+
+        print(&#x27;[3] final means final: a message to the completed task&#x27;)
+        try:
+            req = SendMessageRequest(message=new_text_message(
+                &#x27;one more thing&#x27;, role=Role.ROLE_USER, task_id=done.id, context_id=done.context_id))
+            [r async for r in client.send_message(req)]
+            print(&#x27;    accepted (unexpected)&#x27;)
+        except Exception as e:
+            print(f&#x27;    refused: {type(e).__name__}: {e}&#x27;)
+        await client.close()
+
+# --- the remote agent (stand-in) ---
+# The message text picks which path the task takes, so one run shows every state.
+class Worker(AgentExecutor):
+    async def execute(self, ctx, q):
+        task = new_task_from_user_message(ctx.message); await q.enqueue_event(task)
+        up, text = TaskUpdater(q, task.id, task.context_id), get_message_text(ctx.message)
+        msg = lambda t: new_text_message(t, task_id=task.id, context_id=task.context_id)
+        await asyncio.sleep(0.3); await up.start_work(); await asyncio.sleep(0.4)
+        if text == &#x27;ask&#x27;:      return await up.requires_input(msg(&#x27;Which quarter do you mean?&#x27;))
+        if text == &#x27;login&#x27;:    return await up.requires_auth(msg(&#x27;Needs a CRM access token.&#x27;))
+        if text == &#x27;break&#x27;:    return await up.failed(msg(&#x27;(CRM timed out)&#x27;))
+        if text == &#x27;refuse&#x27;:   return await up.reject(msg(&#x27;(not a job I do)&#x27;))
+        if text == &#x27;slow&#x27;:     await asyncio.sleep(30)
+        await up.add_artifact([new_text_part(&#x27;Q3 revenue up 4%.&#x27;)], name=&#x27;summary&#x27;)
+        await up.complete()
+    async def cancel(self, ctx, q):
+        await TaskUpdater(q, ctx.task_id, ctx.context_id).cancel()
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(name=&#x27;Report Writer&#x27;, description=&#x27;Writes short reports.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;report&#x27;, name=&#x27;Write a report&#x27;, description=&#x27;Summarises data.&#x27;, tags=[&#x27;reports&#x27;])])
+handler = DefaultRequestHandler(agent_executor=Worker(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+# a2a-sdk 1.3.0 logs a cleanup traceback on the server side after it refuses a message
+# to a final task (a background task left pending). Hidden so the lab output stays readable.
+logging.getLogger(&#x27;opentelemetry.context&#x27;).setLevel(logging.CRITICAL)
+logging.getLogger(&#x27;asyncio&#x27;).setLevel(logging.CRITICAL)
+
+# --- run both, then shut down ---
+async def run():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started: await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose(); server.should_exit = True; await serving
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab13.txt</code></summary><pre class="out">[1] one loop, every state (each job sent with returnImmediately, then checked)
+    summarise Q3  SUBMITTED &gt; WORKING &gt; COMPLETED      -&gt; collect: [&#x27;summary&#x27;]
+    ask           SUBMITTED &gt; WORKING &gt; INPUT_REQUIRED -&gt; paused, needs you: &quot;Which quarter do you mean?&quot;
+    login         SUBMITTED &gt; WORKING &gt; AUTH_REQUIRED  -&gt; paused, needs you: &quot;Needs a CRM access token.&quot;
+    break         SUBMITTED &gt; WORKING &gt; FAILED         -&gt; it&#x27;s over (CRM timed out)
+    refuse        SUBMITTED &gt; WORKING &gt; REJECTED       -&gt; it&#x27;s over (not a job I do)
+    slow          SUBMITTED &gt; WORKING &gt; CANCELED       -&gt; it&#x27;s over
+[2] a waiting call returns at a pause, not only at the end
+    returned after 0.7s with state INPUT_REQUIRED
+[3] final means final: a message to the completed task
+    refused: UnsupportedOperationError: Task 83555154-626e-46a2-88b8-d08d360e77da is in terminal state: TASK_STATE_COMPLETED
+</pre></details></section><section id="lab14"><p class="k">LAB 14</p><h2>When the remote agent asks you a question</h2><h3>What the video showed</h3>
+<p>When a task comes back as input required, read the question in its status message and answer with a new message that carries the same task ID. The same task then carries on. A2A doesn't say who answers. Leave the task ID off and your answer isn't attached to that task. Send a context ID that doesn't match the task's and the agent rejects the message.</p>
+<h3>Run it</h3>
+<pre><code>python lab14_answer_question.py
+</code></pre>
+<p>Sample output: <code>out/lab14.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code>: "Book me a flight" comes back <code>INPUT_REQUIRED</code> with the question in <code>task.status.message</code>, as in the spec's example.</li>
+<li><code>on_question()</code> is where the answer comes from. Here it's plain code; it could be your agent's model or a person you pass the question to.</li>
+<li><code>[2]</code>: the answer is sent with <code>task_id=task.id, context_id=task.context_id</code>. The same task ID comes back, now <code>COMPLETED</code>, with the booking as its artifact.</li>
+<li><code>[3]</code>: the same answer without the task ID (with the right context ID) lands in a different, new task. The stand-in treats it as a fresh request and asks again. The first task is still <code>INPUT_REQUIRED</code>.</li>
+<li><code>[4]</code>: task ID plus a context ID that isn't the task's is rejected with <code>InvalidParamsError: Context ... does not match context ... of task ...</code>. The spec says agents MUST reject this.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>In <code>[2]</code>, send only <code>task_id=task.id</code> (no <code>context_id</code>). It still works: the agent MUST infer the context from the task.</li>
+<li>Change <code>on_question</code> to read the answer from the keyboard with <code>input(question + ' ')</code>, so a person answers.</li>
+</ul>
+<details><summary>The code <code>lab14_answer_question.py</code></summary><pre>&quot;&quot;&quot;Lab 14 (video section s14): when the remote agent asks you a question.
+
+The task comes back INPUT_REQUIRED with the question in its status message. You
+answer with a new message carrying the same task ID, and the same task carries on.
+Leave the task ID off and the answer isn&#x27;t attached to that task; send a context ID
+that doesn&#x27;t match the task&#x27;s and the agent rejects it.
+Run: python lab14_answer_question.py
+&quot;&quot;&quot;
+import asyncio, socket
+import httpx, uvicorn
+from starlette.applications import Starlette
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import get_message_text, new_task_from_user_message, new_text_message, new_text_part
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, GetTaskRequest,
+                       Role, SendMessageRequest, TaskState)
+
+# --- your agent: the client side ---
+st = lambda t: TaskState.Name(t.status.state).removeprefix(&#x27;TASK_STATE_&#x27;)
+
+async def on_question(question):
+    # A2A doesn&#x27;t say who answers: your agent&#x27;s model, your own code, or a person.
+    # Here it&#x27;s plain code.
+    return &#x27;From San Francisco to New York&#x27;
+
+async def send(client, text, task_id=None, context_id=None):
+    msg = new_text_message(text, role=Role.ROLE_USER, task_id=task_id, context_id=context_id)
+    return [r async for r in client.send_message(SendMessageRequest(message=msg))][-1].task
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        card = await A2ACardResolver(http, URL).get_agent_card()
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=False))
+
+        print(&#x27;[1] send &quot;Book me a flight&quot;&#x27;)
+        task = await send(client, &#x27;Book me a flight&#x27;)         # the call returns at the pause
+        print(f&#x27;    task {task.id[:8]}.. {st(task)}: &quot;{get_message_text(task.status.message)}&quot;&#x27;)
+
+        print(&#x27;[2] answer with the same task ID (and its context ID)&#x27;)
+        answer = await on_question(get_message_text(task.status.message))
+        after = await send(client, answer, task_id=task.id, context_id=task.context_id)
+        print(f&#x27;    task {after.id[:8]}.. {st(after)}  same task: {after.id == task.id}&#x27;)
+        print(f&#x27;    artifact: &quot;{after.artifacts[0].parts[0].text}&quot;&#x27;)
+
+        print(&#x27;[3] answer WITHOUT the task ID (same context ID)&#x27;)
+        first = await send(client, &#x27;Book me a flight&#x27;)
+        other = await send(client, answer, context_id=first.context_id)
+        print(f&#x27;    reply went to task {other.id[:8]}.. ({st(other)})  same task: {other.id == first.id}&#x27;)
+        first = await client.get_task(GetTaskRequest(id=first.id))
+        print(f&#x27;    first task {first.id[:8]}.. is still {st(first)}&#x27;)
+
+        print(&quot;[4] answer with the task ID but a context ID that isn&#x27;t the task&#x27;s&quot;)
+        try:
+            await send(client, answer, task_id=first.id, context_id=&#x27;some-other-conversation&#x27;)
+            print(&#x27;    accepted (unexpected)&#x27;)
+        except Exception as e:
+            print(f&#x27;    rejected: {type(e).__name__}: {e}&#x27;.replace(first.id, first.id[:8] + &#x27;..&#x27;)
+                  .replace(first.context_id, first.context_id[:8] + &#x27;..&#x27;))
+        await client.close()
+
+# --- the remote agent (stand-in) ---
+# A new request is paused with a question; an answer on the same task completes it.
+class FlightBooker(AgentExecutor):
+    async def execute(self, ctx, q):
+        task = ctx.current_task
+        if task is None:                                       # a new request
+            task = new_task_from_user_message(ctx.message); await q.enqueue_event(task)
+            up = TaskUpdater(q, task.id, task.context_id)
+            await up.start_work()
+            await up.requires_input(new_text_message(
+                &#x27;I need more details. Where would you like to fly from and to?&#x27;,
+                task_id=task.id, context_id=task.context_id))
+            return
+        up = TaskUpdater(q, task.id, task.context_id)          # the answer, on the same task
+        await up.start_work()
+        await asyncio.sleep(0.3)
+        await up.add_artifact([new_text_part(f&#x27;Booked: {get_message_text(ctx.message)}&#x27;)], name=&#x27;booking&#x27;)
+        await up.complete()
+    async def cancel(self, ctx, q): pass
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(name=&#x27;Flight Booker&#x27;, description=&#x27;Books flights.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;book&#x27;, name=&#x27;Book a flight&#x27;, description=&#x27;Books a flight.&#x27;, tags=[&#x27;travel&#x27;])])
+handler = DefaultRequestHandler(agent_executor=FlightBooker(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+
+# --- run both, then shut down ---
+async def run():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started: await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose(); server.should_exit = True; await serving
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab14.txt</code></summary><pre class="out">[1] send &quot;Book me a flight&quot;
+    task 985cdd5d.. INPUT_REQUIRED: &quot;I need more details. Where would you like to fly from and to?&quot;
+[2] answer with the same task ID (and its context ID)
+    task 985cdd5d.. COMPLETED  same task: True
+    artifact: &quot;Booked: From San Francisco to New York&quot;
+[3] answer WITHOUT the task ID (same context ID)
+    reply went to task 48d57bc1.. (INPUT_REQUIRED)  same task: False
+    first task d1b6dfcb.. is still INPUT_REQUIRED
+[4] answer with the task ID but a context ID that isn&#x27;t the task&#x27;s
+    rejected: InvalidParamsError: Context some-other-conversation does not match context ed8c3e12.. of task d1b6dfcb..
+</pre></details></section><section id="lab15"><p class="k">LAB 15</p><h2>When it needs a login or an approval</h2><h3>What the video showed</h3>
+<p>In auth required, the remote agent needs permission to continue, and its status message says what it needs. The credential normally doesn't travel inside an A2A message. It reaches the agent by a separate, secure route, such as an OAuth sign-in, unless both sides have agreed on another way. Once it arrives, the agent may carry on without any message from you, so keep listening. The state itself grants nothing: what the credential allows is decided by the agent and whoever issued it.</p>
+<h3>Run it</h3>
+<pre><code>python lab15_auth_required.py
+</code></pre>
+<p>Sample output: <code>out/lab15.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code>: the waiting call returns at the pause, <code>AUTH_REQUIRED</code>, with the status message naming the need ("an OAuth access token for the Calendar API").</li>
+<li><code>[2]</code>: the client keeps listening by subscribing to the task (<code>streamer.subscribe(SubscribeToTaskRequest(id=...))</code>). The first thing on the stream is the task as it is now. Keeping a stream open, push notifications, or checking the task with <code>get_task</code> would also work.</li>
+<li><code>[3]</code> is a stand-in. The <code>POST /oauth/callback</code> is a plain HTTP route on the agent, outside A2A, standing in for a real OAuth sign-in. It is not an A2A message, and the A2A client never puts the token in a message.</li>
+<li><code>[4]</code>: with no message from the client, the stream brings <code>WORKING</code>, the artifact, then <code>COMPLETED</code>, and closes.</li>
+<li>In <code>CalendarAgent.execute</code>, the agent checks the token itself (<code>'calendar.read' in ISSUED.get(token, ...)</code>) before reading the calendar. Reaching <code>AUTH_REQUIRED</code> and getting <em>a</em> token isn't enough.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Send <code>'access_token': 'wrong-token'</code> in <code>[3]</code>. The agent's own check fails the task, and the stream ends with <code>FAILED</code>.</li>
+<li>Replace the subscription with a loop that calls <code>client.get_task(...)</code> every 0.3 s until the state is final. That's the "keep checking" option.</li>
+</ul>
+<details><summary>The code <code>lab15_auth_required.py</code></summary><pre>&quot;&quot;&quot;Lab 15 (video section s15): when it needs a login or an approval.
+
+The remote task goes AUTH_REQUIRED, and its status message says what it needs.
+The credential normally doesn&#x27;t travel inside an A2A message: it reaches the agent
+by a separate route (here, a stand-in for an OAuth sign-in). Once it arrives, the
+agent may carry on without any message from you, so you keep listening; this lab
+subscribes to the task (keeping a stream open, push notifications, or checking the
+task are the other ways). Run: python lab15_auth_required.py
+&quot;&quot;&quot;
+import asyncio, socket
+import httpx, uvicorn
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import get_message_text, new_task_from_user_message, new_text_message, new_text_part
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Role,
+                       SendMessageRequest, SubscribeToTaskRequest, TaskState)
+
+# --- your agent: the client side ---
+st = lambda s: TaskState.Name(s).removeprefix(&#x27;TASK_STATE_&#x27;)
+
+def describe(ev):
+    kind = ev.WhichOneof(&#x27;payload&#x27;)
+    if kind == &#x27;task&#x27;: return f&#x27;task snapshot, {st(ev.task.status.state)}&#x27;
+    if kind == &#x27;status_update&#x27;: return f&#x27;status update, {st(ev.status_update.status.state)}&#x27;
+    return f&#x27;artifact update, &quot;{ev.artifact_update.artifact.parts[0].text}&quot;&#x27;
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        card = await A2ACardResolver(http, URL).get_agent_card()
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=False))
+        streamer = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=True))
+
+        print(&#x27;[1] send the job; the waiting call returns at the pause&#x27;)
+        msg = new_text_message(&quot;What&#x27;s on my calendar tomorrow?&quot;, role=Role.ROLE_USER)
+        task = [r async for r in client.send_message(SendMessageRequest(message=msg))][-1].task
+        print(f&#x27;    {st(task.status.state)}: &quot;{get_message_text(task.status.message)}&quot;&#x27;)
+
+        print(&#x27;[2] keep listening: subscribe to the task&#x27;)
+        snapshot = asyncio.Event()
+        async def listen():
+            async for ev in streamer.subscribe(SubscribeToTaskRequest(id=task.id)):
+                print(&#x27;    stream:&#x27;, describe(ev)); snapshot.set()
+        listening = asyncio.create_task(listen())
+        await snapshot.wait()
+
+        # [3] STAND-IN for an OAuth sign-in. In real life a person signs in with the
+        #     provider, which sends the agent the credential over its own HTTPS route.
+        #     Here one plain POST plays that part. It is not an A2A message, and your
+        #     A2A client never sends the token to the agent.
+        print(&#x27;[3] out of band: the sign-in delivers a token to the agent (stand-in)&#x27;)
+        r = await http.post(f&#x27;{URL}/oauth/callback&#x27;, json={&#x27;task_id&#x27;: task.id, &#x27;access_token&#x27;: &#x27;demo-token-123&#x27;})
+        print(f&#x27;    sign-in route answered {r.status_code}; no A2A message sent&#x27;)
+
+        print(&#x27;[4] the task carries on by itself; updates arrive on the stream&#x27;)
+        await listening                          # the stream closes when the task finishes
+        await client.close(); await streamer.close()
+
+# --- the remote agent (stand-in) ---
+# It needs a calendar token. It waits for the token on its own sign-in route, then
+# checks for itself what the token allows: the AUTH_REQUIRED state grants nothing.
+ISSUED = {&#x27;demo-token-123&#x27;: {&#x27;calendar.read&#x27;}}     # stand-in for the token issuer&#x27;s records
+arrived: dict[str, asyncio.Future] = {}
+
+class CalendarAgent(AgentExecutor):
+    async def execute(self, ctx, q):
+        task = new_task_from_user_message(ctx.message); await q.enqueue_event(task)
+        up = TaskUpdater(q, task.id, task.context_id)
+        await up.start_work()
+        arrived[task.id] = asyncio.get_running_loop().create_future()
+        await up.requires_auth(new_text_message(
+            &#x27;Needs an OAuth access token for the Calendar API (scope calendar.read).&#x27;,
+            task_id=task.id, context_id=task.context_id))
+        token = await arrived[task.id]                 # comes in on /oauth/callback
+        await asyncio.sleep(0.3)
+        if &#x27;calendar.read&#x27; not in ISSUED.get(token, set()):
+            return await up.failed(new_text_message(&#x27;Token does not allow calendar.read.&#x27;))
+        await up.start_work()
+        await up.add_artifact([new_text_part(&#x27;09:00 stand-up; 14:00 dentist&#x27;)], name=&#x27;agenda&#x27;)
+        await up.complete()
+    async def cancel(self, ctx, q): pass
+
+async def oauth_callback(request):                     # the separate route, outside A2A
+    body = await request.json()
+    arrived[body[&#x27;task_id&#x27;]].set_result(body[&#x27;access_token&#x27;])
+    return JSONResponse({&#x27;ok&#x27;: True})
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(name=&#x27;Calendar Agent&#x27;, description=&#x27;Answers questions about your calendar.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=True),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;agenda&#x27;, name=&#x27;Read the agenda&#x27;, description=&#x27;Reads your calendar.&#x27;, tags=[&#x27;calendar&#x27;])])
+handler = DefaultRequestHandler(agent_executor=CalendarAgent(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;),
+                        Route(&#x27;/oauth/callback&#x27;, oauth_callback, methods=[&#x27;POST&#x27;])])
+
+# --- run both, then shut down ---
+async def run():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started: await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose(); server.should_exit = True; await serving
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab15.txt</code></summary><pre class="out">[1] send the job; the waiting call returns at the pause
+    AUTH_REQUIRED: &quot;Needs an OAuth access token for the Calendar API (scope calendar.read).&quot;
+[2] keep listening: subscribe to the task
+    stream: task snapshot, AUTH_REQUIRED
+[3] out of band: the sign-in delivers a token to the agent (stand-in)
+    sign-in route answered 200; no A2A message sent
+[4] the task carries on by itself; updates arrive on the stream
+    stream: status update, WORKING
+    stream: artifact update, &quot;09:00 stand-up; 14:00 dentist&quot;
+    stream: status update, COMPLETED
+</pre></details></section><section id="lab16"><p class="k">LAB 16</p><h2>Getting the results</h2><h3>What the video showed</h3>
+<p>When a task completes, its artifacts are the output, and each one can hold text, files or data. The agent's messages are progress and questions; the agent decides which it keeps in the task's history, so don't count on finding one there later. You can fetch a task by ID with as much recent history as you want, up to what the agent keeps. You can list the tasks you've started, filtered by conversation or state, newest first.</p>
+<h3>Run it</h3>
+<pre><code>python lab16_results.py
+</code></pre>
+<p>Sample output: <code>out/lab16.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code>: three artifacts, each with a different kind of part: <code>url</code> (a file by link, <code>image/png</code>), <code>data</code> (<code>application/json</code>) and <code>text</code>.</li>
+<li><code>[2]</code>: with <code>historyLength</code> not set you get everything this agent kept (your message plus two progress messages). <code>1</code> gives the most recent one; <code>0</code> gives none. <code>historyLength</code> is a maximum, and an agent may return fewer.</li>
+<li><code>[2]</code>: the last message, "Done.", is the current status message. In this SDK it isn't in the history list. That's one reason not to rely on history for results.</li>
+<li><code>[3]</code>: <code>ListTasks(context_id=...)</code> returns <code>b</code> then <code>a</code>, newest first. <code>ListTasks(status=INPUT_REQUIRED)</code> finds only the paused task <code>c</code>.</li>
+<li><code>[3]</code>: with <code>page_size=2</code> you get one page and a <code>next_page_token</code>. Artifacts are left out unless you set <code>include_artifacts=True</code>.</li>
+<li>You see only the tasks the agent's rules let you see. The SDK's in-memory store keys tasks by the caller's identity; this lab has a single caller, so it sees all of them.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Pass the <code>next_page_token</code> back as <code>page_token=</code> to fetch the second page (task <code>a</code>).</li>
+<li>Set <code>include_artifacts=True</code> on the <code>page_size=2</code> call and check the <code>artifacts included:</code> value.</li>
+</ul>
+<details><summary>The code <code>lab16_results.py</code></summary><pre>&quot;&quot;&quot;Lab 16 (video section s16): getting the results.
+
+When a task completes, its artifacts are the output (text, files or data). The
+agent&#x27;s messages are progress and questions, and the agent decides which it keeps
+in the task&#x27;s history. GetTask takes a task ID and how much recent history you
+want; ListTasks finds tasks you started, filtered by conversation or state,
+newest first. Run: python lab16_results.py
+&quot;&quot;&quot;
+import asyncio, socket
+import httpx, uvicorn
+from starlette.applications import Starlette
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import (get_message_text, new_data_part, new_task_from_user_message, new_text_message,
+                         new_text_part, new_url_part)
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, GetTaskRequest,
+                       ListTasksRequest, Role, SendMessageRequest, TaskState)
+
+# --- your agent: the client side ---
+st = lambda t: TaskState.Name(t.status.state).removeprefix(&#x27;TASK_STATE_&#x27;)
+
+async def send(client, text, context_id=None):
+    msg = new_text_message(text, role=Role.ROLE_USER, context_id=context_id)
+    return [r async for r in client.send_message(SendMessageRequest(message=msg))][-1].task
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        card = await A2ACardResolver(http, URL).get_agent_card()
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=False))
+
+        print(&#x27;[1] collect the artifacts of a completed task&#x27;)
+        a = await send(client, &#x27;find faces in team.png&#x27;)
+        for art in a.artifacts:
+            kinds = [p.WhichOneof(&#x27;content&#x27;) for p in art.parts]
+            print(f&#x27;    {art.name}: {kinds} {art.parts[0].media_type}&#x27;)
+
+        print(&#x27;[2] GetTask with historyLength (a maximum; the agent may keep or send fewer)&#x27;)
+        for n in (None, 1, 0):
+            req = GetTaskRequest(id=a.id) if n is None else GetTaskRequest(id=a.id, history_length=n)
+            t = await client.get_task(req)
+            print(f&#x27;    historyLength={&quot;not set&quot; if n is None else n}: {len(t.history)} message(s)&#x27;,
+                  [get_message_text(m)[:20] for m in t.history])
+        print(f&#x27;    current status message (not in history): &quot;{get_message_text(t.status.message)}&quot;&#x27;)
+
+        print(&#x27;[3] ListTasks, filtered (newest first)&#x27;)
+        b = await send(client, &#x27;now find faces in team2.png&#x27;, context_id=a.context_id)  # same conversation
+        c = await send(client, &#x27;find faces&#x27;)                                            # new one; pauses
+        label = {a.id: &#x27;a&#x27;, b.id: &#x27;b&#x27;, c.id: &#x27;c&#x27;}
+        mine = await client.list_tasks(ListTasksRequest(context_id=a.context_id))
+        print(f&#x27;    contextId of a: {[(label[t.id], st(t)) for t in mine.tasks]}  total={mine.total_size}&#x27;)
+        paused = await client.list_tasks(ListTasksRequest(status=TaskState.TASK_STATE_INPUT_REQUIRED))
+        print(f&#x27;    status INPUT_REQUIRED: {[(label[t.id], st(t)) for t in paused.tasks]}&#x27;)
+        everything = await client.list_tasks(ListTasksRequest(page_size=2, include_artifacts=False))
+        print(f&#x27;    page_size=2: {[label[t.id] for t in everything.tasks]}  &#x27;
+              f&#x27;next page token: {&quot;yes&quot; if everything.next_page_token else &quot;no&quot;}  &#x27;
+              f&#x27;artifacts included: {any(t.artifacts for t in everything.tasks)}&#x27;)
+        await client.close()
+
+# --- the remote agent (stand-in) ---
+# A message naming an image completes with three artifacts; one without pauses
+# with a question. Progress messages go in the task status as it works.
+class FaceFinder(AgentExecutor):
+    async def execute(self, ctx, q):
+        task = new_task_from_user_message(ctx.message); await q.enqueue_event(task)
+        up = TaskUpdater(q, task.id, task.context_id)
+        say = lambda t: new_text_message(t, task_id=task.id, context_id=task.context_id)
+        if &#x27;.png&#x27; not in get_message_text(ctx.message):
+            return await up.requires_input(say(&#x27;Which image should I look at?&#x27;))
+        await up.start_work(say(&#x27;Loading the image...&#x27;))
+        await up.start_work(say(&#x27;Found 2 faces, drawing boxes...&#x27;))
+        await up.add_artifact([new_url_part(&#x27;https://example.com/output.png&#x27;, media_type=&#x27;image/png&#x27;,
+                                            filename=&#x27;processed_image_with_faces.png&#x27;)], name=&#x27;image&#x27;)
+        await up.add_artifact([new_data_part({&#x27;faces&#x27;: 2}, media_type=&#x27;application/json&#x27;)], name=&#x27;counts&#x27;)
+        await up.add_artifact([new_text_part(&#x27;Two faces, both smiling.&#x27;, media_type=&#x27;text/plain&#x27;)], name=&#x27;note&#x27;)
+        await up.complete(say(&#x27;Done.&#x27;))
+    async def cancel(self, ctx, q): pass
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(name=&#x27;Face Finder&#x27;, description=&#x27;Finds faces in images.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;image/png&#x27;, &#x27;application/json&#x27;, &#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;faces&#x27;, name=&#x27;Find faces&#x27;, description=&#x27;Finds faces in an image.&#x27;, tags=[&#x27;vision&#x27;])])
+handler = DefaultRequestHandler(agent_executor=FaceFinder(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+
+# --- run both, then shut down ---
+async def run():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started: await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose(); server.should_exit = True; await serving
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab16.txt</code></summary><pre class="out">[1] collect the artifacts of a completed task
+    image: [&#x27;url&#x27;] image/png
+    counts: [&#x27;data&#x27;] application/json
+    note: [&#x27;text&#x27;] text/plain
+[2] GetTask with historyLength (a maximum; the agent may keep or send fewer)
+    historyLength=not set: 3 message(s) [&#x27;find faces in team.p&#x27;, &#x27;Loading the image...&#x27;, &#x27;Found 2 faces, drawi&#x27;]
+    historyLength=1: 1 message(s) [&#x27;Found 2 faces, drawi&#x27;]
+    historyLength=0: 0 message(s) []
+    current status message (not in history): &quot;Done.&quot;
+[3] ListTasks, filtered (newest first)
+    contextId of a: [(&#x27;b&#x27;, &#x27;COMPLETED&#x27;), (&#x27;a&#x27;, &#x27;COMPLETED&#x27;)]  total=2
+    status INPUT_REQUIRED: [(&#x27;c&#x27;, &#x27;INPUT_REQUIRED&#x27;)]
+    page_size=2: [&#x27;c&#x27;, &#x27;b&#x27;]  next page token: yes  artifacts included: False
+</pre></details></section><section id="lab17"><p class="k">LAB 17</p><h2>Live updates with streaming</h2><h3>What the video showed</h3>
+<p>To stream, check that the card supports it and send with streaming on. In the Python SDK, that's one setting on the client. The stream starts with the task, then brings a status update when the state changes and an artifact update when output is ready. Large outputs can arrive in pieces, with flags for "add this to the same artifact" and "this is the last piece". If the connection drops, subscribe to the task again: first you get the task as it is now, then the updates continue.</p>
+<h3>Run it</h3>
+<pre><code>python lab17_stream.py
+</code></pre>
+<p>Sample output: <code>out/lab17.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code> and <code>ClientConfig(..., streaming=True)</code>: the one setting. The SDK streams only if the card's <code>capabilities.streaming</code> is true too.</li>
+<li><code>[2]</code>: the order is the same as in the official Hello World tutorial: <code>task SUBMITTED</code>, <code>status update WORKING "Processing request..."</code>, artifact updates, <code>status update COMPLETED</code>. Then the stream closes.</li>
+<li>The three artifact updates carry <code>append=False/True</code> and <code>last_chunk=True</code> on the last one. <code>show()</code> adds pieces to the same <code>artifact_id</code> when <code>append</code> is true.</li>
+<li><code>[3]</code>: the client stops reading after the first piece and closes the stream (<code>await stream.aclose()</code>). The task keeps running on the agent.</li>
+<li><code>(resubscribed) task WORKING (artifact so far: "Hello, World! ")</code>: after <code>client.subscribe(...)</code>, the first event is the task snapshot, which already includes the piece sent while the client was away. Then the remaining updates arrive.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Make the stand-in ask a question before the artifacts (<code>await up.requires_input(new_text_message('Which language?', task_id=task.id, context_id=task.context_id)); return</code>). The stream in <code>[2]</code> ends at <code>INPUT_REQUIRED</code>.</li>
+<li>In <code>[3]</code>, change <code>asyncio.sleep(0.6)</code> to <code>asyncio.sleep(2)</code>. The task has finished before you subscribe, and the subscription is refused with <code>UnsupportedOperationError ... is in terminal state</code> (wrap it in <code>try</code>/<code>except</code> to print it). For a finished task, use <code>get_task</code> instead.</li>
+</ul>
+<details><summary>The code <code>lab17_stream.py</code></summary><pre>&quot;&quot;&quot;Lab 17 (video section s17): live updates with streaming.
+
+Check the card supports streaming, then send with streaming on (one setting on the
+Python SDK&#x27;s client). The stream starts with the task, then brings a status update
+when the state changes and an artifact update when output is ready. A large output
+can arrive in pieces (append, last chunk). If the connection drops, subscribe to
+the task again: first you get the task as it is now, then the updates continue.
+Run: python lab17_stream.py
+&quot;&quot;&quot;
+import asyncio, socket
+import httpx, uvicorn
+from starlette.applications import Starlette
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import get_message_text, new_task_from_user_message, new_text_message, new_text_part
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Role,
+                       SendMessageRequest, SubscribeToTaskRequest, TaskState)
+
+# --- your agent: the client side ---
+st = lambda s: TaskState.Name(s).removeprefix(&#x27;TASK_STATE_&#x27;)
+pieces = {}                                   # artifact_id -&gt; text assembled so far
+
+def show(ev):
+    kind = ev.WhichOneof(&#x27;payload&#x27;)
+    if kind == &#x27;task&#x27;:
+        t = ev.task
+        for a in t.artifacts: pieces[a.artifact_id] = &#x27;&#x27;.join(p.text for p in a.parts)
+        return f&#x27;task           {st(t.status.state)}&#x27; + (f&#x27;  (artifact so far: &quot;{&quot;&quot;.join(pieces.values())}&quot;)&#x27; if t.artifacts else &#x27;&#x27;)
+    if kind == &#x27;status_update&#x27;:
+        s = ev.status_update.status
+        return f&#x27;status update  {st(s.state)}&#x27; + (f&#x27; &quot;{get_message_text(s.message)}&quot;&#x27; if s.HasField(&#x27;message&#x27;) else &#x27;&#x27;)
+    u = ev.artifact_update
+    text = &#x27;&#x27;.join(p.text for p in u.artifact.parts)
+    pieces[u.artifact.artifact_id] = (pieces.get(u.artifact.artifact_id, &#x27;&#x27;) if u.append else &#x27;&#x27;) + text
+    return f&#x27;artifact update &quot;{text}&quot;  append={u.append} last_chunk={u.last_chunk}&#x27;
+
+def job(text):
+    return SendMessageRequest(message=new_text_message(text, role=Role.ROLE_USER))
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        card = await A2ACardResolver(http, URL).get_agent_card()
+        print(f&#x27;[1] card says streaming: {card.capabilities.streaming}&#x27;)
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=True))
+
+        print(&#x27;[2] stream a job; each update in order&#x27;)
+        async for ev in client.send_message(job(&#x27;Hi there&#x27;)):
+            print(&#x27;   &#x27;, show(ev))
+        print(f&#x27;    stream closed; assembled artifact: &quot;{&quot;&quot;.join(pieces.values())}&quot;&#x27;)
+
+        print(&#x27;[3] drop the stream part-way, then subscribe to the task again&#x27;)
+        pieces.clear()
+        stream = client.send_message(job(&#x27;Hi again&#x27;))
+        async for ev in stream:
+            print(&#x27;   &#x27;, show(ev))
+            if ev.WhichOneof(&#x27;payload&#x27;) == &#x27;artifact_update&#x27;:
+                task_id = ev.artifact_update.task_id; break      # connection &quot;drops&quot; here
+        await stream.aclose()
+        await asyncio.sleep(0.6)                                 # updates go on without us
+        async for ev in client.subscribe(SubscribeToTaskRequest(id=task_id)):
+            print(&#x27;    (resubscribed)&#x27;, show(ev))
+        print(f&#x27;    assembled artifact: &quot;{&quot;&quot;.join(pieces.values())}&quot;&#x27;)
+        await client.close()
+
+# --- the remote agent (stand-in) ---
+# Like the official Hello World sample, but the greeting arrives in three pieces.
+class HelloAgent(AgentExecutor):
+    async def execute(self, ctx, q):
+        task = new_task_from_user_message(ctx.message); await q.enqueue_event(task)
+        up = TaskUpdater(q, task.id, task.context_id)
+        await up.start_work(new_text_message(&#x27;Processing request...&#x27;, task_id=task.id, context_id=task.context_id))
+        chunks = [&#x27;Hello, &#x27;, &#x27;World! &#x27;, f&#x27;({get_message_text(ctx.message)})&#x27;]
+        for i, chunk in enumerate(chunks):
+            await asyncio.sleep(0.4)
+            await up.add_artifact([new_text_part(chunk)], artifact_id=&#x27;greeting&#x27;, name=&#x27;greeting&#x27;,
+                                  append=i &gt; 0, last_chunk=i == len(chunks) - 1)
+        await up.complete()
+    async def cancel(self, ctx, q): pass
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(name=&#x27;Hello World Agent&#x27;, description=&#x27;Just a hello world agent&#x27;, version=&#x27;0.0.1&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=True),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;echo_bot&#x27;, name=&#x27;Echo Bot&#x27;, description=&#x27;Says hello.&#x27;, tags=[&#x27;echo-example&#x27;])])
+handler = DefaultRequestHandler(agent_executor=HelloAgent(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+
+# --- run both, then shut down ---
+async def run():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started: await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose(); server.should_exit = True; await serving
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab17.txt</code></summary><pre class="out">[1] card says streaming: True
+[2] stream a job; each update in order
+    task           SUBMITTED
+    status update  WORKING &quot;Processing request...&quot;
+    artifact update &quot;Hello, &quot;  append=False last_chunk=False
+    artifact update &quot;World! &quot;  append=True last_chunk=False
+    artifact update &quot;(Hi there)&quot;  append=True last_chunk=True
+    status update  COMPLETED
+    stream closed; assembled artifact: &quot;Hello, World! (Hi there)&quot;
+[3] drop the stream part-way, then subscribe to the task again
+    task           SUBMITTED
+    status update  WORKING &quot;Processing request...&quot;
+    artifact update &quot;Hello, &quot;  append=False last_chunk=False
+    (resubscribed) task           WORKING  (artifact so far: &quot;Hello, World! &quot;)
+    (resubscribed) artifact update &quot;(Hi again)&quot;  append=True last_chunk=True
+    (resubscribed) status update  COMPLETED
+    assembled artifact: &quot;Hello, World! (Hi again)&quot;
+</pre></details></section><section id="lab18"><p class="k">LAB 18</p><h2>Callbacks with push notifications</h2><h3>What the video showed</h3>
+<p>Check that the card supports push notifications, then give the remote agent a webhook address and the credentials it should use when it calls you, in the first message or added to a task later. The agent sends updates to your webhook (the same kind of update a stream carries), and your webhook replies with a success code. The same update can arrive twice, and one can go missing. So check the credentials, check that the task ID is one you started, ignore duplicates, then fetch the task. If you offer push notifications, the spec recommends checking the webhook addresses callers give you.</p>
+<h3>Run it</h3>
+<pre><code>python lab18_push.py
+</code></pre>
+<p>It runs two local servers: the stand-in agent and your webhook receiver. Sample output: <code>out/lab18.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[2]</code>: the push config goes in the first message: <code>TaskPushNotificationConfig(url=WEBHOOK, authentication=AuthenticationInfo(scheme='Bearer', credentials=SECRET))</code>. With <code>return_immediately=True</code> the task comes back <code>SUBMITTED</code> and no connection stays open.</li>
+<li><code>webhook()</code> checks the <code>Authorization</code> header first. A call with the wrong credentials gets <code>401</code>. Everything else gets <code>200</code> straight away and is checked afterwards in <code>check()</code>.</li>
+<li><code>[3]</code>: each notification is a StreamResponse: <code>task</code>, <code>statusUpdate</code> or <code>artifactUpdate</code>. The fake call about <code>"not-mine"</code> is ignored because it isn't a task this client started.</li>
+<li><code>statusUpdate duplicate, ignored</code>: the stand-in's <code>RetryingSender</code> sends the final update twice, as a retry would. The client recognises the same body and drops it. Then <code>GetTask</code> fetches the full result.</li>
+<li><code>[4]</code>, agent side: the SDK's <code>validate_push_notification_url</code> rejects private, link-local and loopback addresses, and registering <code>http://192.168.1.10/hook</code> fails with <code>InvalidParamsError</code>. The lab's own webhook is on 127.0.0.1, so <code>allowed()</code> allow-lists that one exact address (see the comment there).</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>In <code>[2]</code>, change <code>credentials=SECRET</code> to <code>credentials='wrong'</code> and run again. The agent's calls now get <code>401</code>, nothing reaches <code>[3]</code> except the fake call, and the SDK logs each failed delivery. <code>GetTask</code> still gets the result.</li>
+<li>Add the webhook to the task after it exists instead: send without <code>task_push_notification_config</code>, then set <code>push.task_id = task.id</code> and call <code>await client.create_task_push_notification_config(push)</code>. Notifications sent before you registered (here, the first <code>task</code> one) don't reach you.</li>
+</ul>
+<details><summary>The code <code>lab18_push.py</code></summary><pre>&quot;&quot;&quot;Lab 18 (video section s18): callbacks with push notifications. Run: python lab18_push.py
+
+Check the card, give the agent a webhook address and the credentials it should use
+(here in the first message; it can also be added to a task later). Your webhook replies
+with a success code, checks the credentials and the task ID, ignores duplicates, then
+fetches the task. Agent side: checking webhook addresses.&quot;&quot;&quot;
+import asyncio, json, logging, socket, httpx, uvicorn
+from starlette.applications import Starlette
+from starlette.responses import Response
+from starlette.routing import Route
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import new_task_from_user_message, new_text_message, new_text_part
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import (BasePushNotificationSender, InMemoryPushNotificationConfigStore,
+                              InMemoryTaskStore, TaskUpdater)
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, AuthenticationInfo,
+                       GetTaskRequest, Role, SendMessageConfiguration, SendMessageRequest,
+                       TaskPushNotificationConfig, TaskState, TaskStatusUpdateEvent)
+from a2a.utils.push_url_validator import validate_push_notification_url
+
+def free_port():
+    with socket.socket() as s: s.bind((&#x27;127.0.0.1&#x27;, 0)); return s.getsockname()[1]
+# --- your agent: the client side (sender + webhook) ---
+HOOK_PORT = free_port(); WEBHOOK = f&#x27;http://127.0.0.1:{HOOK_PORT}/webhook/a2a-notifications&#x27;
+SECRET = &#x27;webhook-secret-123&#x27;                 # what the agent must present when it calls you
+started, seen, inbox = set(), set(), asyncio.Queue()
+
+async def webhook(request):                   # your webhook receiver
+    if request.headers.get(&#x27;authorization&#x27;) != f&#x27;Bearer {SECRET}&#x27;:
+        return Response(status_code=401)      # check the credentials
+    await inbox.put(await request.json())     # acknowledge fast; process below
+    return Response(status_code=200)          # the success code
+
+def check(body):
+    kind, ev = next(iter(body.items()))       # a StreamResponse: task / statusUpdate / artifactUpdate
+    if (ev.get(&#x27;taskId&#x27;) or ev.get(&#x27;id&#x27;)) not in started:
+        return f&#x27;{kind:&lt;14} task &quot;{ev.get(&quot;taskId&quot;)}&quot;: not one I started, ignored&#x27;
+    key = json.dumps(body, sort_keys=True)
+    if key in seen: return f&#x27;{kind:&lt;14} duplicate, ignored&#x27;
+    seen.add(key)
+    return f&#x27;{kind:&lt;14} &#x27; + ev.get(&#x27;status&#x27;, {}).get(&#x27;state&#x27;, &#x27;artifact ready&#x27;).removeprefix(&#x27;TASK_STATE_&#x27;)
+
+hook_app = Starlette(routes=[Route(&#x27;/webhook/a2a-notifications&#x27;, webhook, methods=[&#x27;POST&#x27;])])
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        card = await A2ACardResolver(http, URL).get_agent_card()
+        print(f&#x27;[1] card says push notifications: {card.capabilities.push_notifications}&#x27;)
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=False))
+
+        print(&#x27;[2] send the job with a webhook address and credentials; no open connection&#x27;)
+        push = TaskPushNotificationConfig(url=WEBHOOK, authentication=AuthenticationInfo(scheme=&#x27;Bearer&#x27;, credentials=SECRET))
+        req = SendMessageRequest(message=new_text_message(&#x27;Weekly sales report&#x27;, role=Role.ROLE_USER),
+            configuration=SendMessageConfiguration(task_push_notification_config=push, return_immediately=True))
+        task = [r async for r in client.send_message(req)][-1].task
+        started.add(task.id)
+        print(f&#x27;    task {task.id[:8]}.. {TaskState.Name(task.status.state)}&#x27;)
+
+        r = await http.post(WEBHOOK, json={&#x27;statusUpdate&#x27;: {&#x27;taskId&#x27;: task.id}},
+                            headers={&#x27;Authorization&#x27;: &#x27;Bearer guess&#x27;})
+        print(f&#x27;    a call with the wrong credentials gets {r.status_code}&#x27;)
+        await http.post(WEBHOOK, json={&#x27;statusUpdate&#x27;: {&#x27;taskId&#x27;: &#x27;not-mine&#x27;}},     # right credentials,
+                        headers={&#x27;Authorization&#x27;: f&#x27;Bearer {SECRET}&#x27;})              # someone else&#x27;s task
+
+        print(&#x27;[3] what reaches the webhook (until it goes quiet for 1 s)&#x27;)
+        while True:
+            try: print(&#x27;   &#x27;, check(await asyncio.wait_for(inbox.get(), 1.0)))
+            except asyncio.TimeoutError: break
+        full = await client.get_task(GetTaskRequest(id=task.id))     # then fetch the full result
+        print(f&#x27;    GetTask: {TaskState.Name(full.status.state)}, artifact &quot;{full.artifacts[0].parts[0].text}&quot;&#x27;)
+
+        print(&#x27;[4] agent side: checking the webhook addresses callers give&#x27;)
+        for url in [&#x27;http://10.0.0.5/hook&#x27;, &#x27;http://169.254.169.254/latest&#x27;, &#x27;http://127.0.0.1:22/&#x27;]:
+            print(f&#x27;    {url:&lt;32} SDK check allows: {await validate_push_notification_url(url)}&#x27;)
+        bad = SendMessageConfiguration(task_push_notification_config=TaskPushNotificationConfig(url=&#x27;http://192.168.1.10/hook&#x27;))
+        try: [r async for r in client.send_message(SendMessageRequest(message=req.message, configuration=bad))]
+        except Exception as e:
+            print(f&#x27;    register http://192.168.1.10/hook -&gt; {type(e).__name__}: {e}&#x27;)
+        await client.close()
+
+# --- the remote agent (stand-in) ---
+class ReportAgent(AgentExecutor):
+    async def execute(self, ctx, q):
+        task = new_task_from_user_message(ctx.message); await q.enqueue_event(task)
+        up = TaskUpdater(q, task.id, task.context_id)
+        await asyncio.sleep(0.5); await up.start_work(); await asyncio.sleep(0.3)
+        await up.add_artifact([new_text_part(&#x27;Sales up 6% week on week.&#x27;)], name=&#x27;report&#x27;)
+        await up.complete()
+    async def cancel(self, ctx, q): pass
+
+async def allowed(url):
+    # The spec says agents SHOULD validate webhook URLs against SSRF: reject private ranges,
+    # localhost and link-local; allow-lists where appropriate. The SDK&#x27;s check rejects them.
+    # This lab&#x27;s own webhook is on 127.0.0.1, so it is allow-listed by exact address.
+    return url == WEBHOOK or await validate_push_notification_url(url)
+
+class RetryingSender(BasePushNotificationSender):  # stand-in: sends the final update twice, like a retry
+    async def send_notification(self, task_id, event):
+        await super().send_notification(task_id, event)
+        if isinstance(event, TaskStatusUpdateEvent) and event.status.state == TaskState.TASK_STATE_COMPLETED:
+            await super().send_notification(task_id, event)
+
+PORT = free_port(); URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(name=&#x27;Report Agent&#x27;, description=&#x27;Builds sales reports.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False, push_notifications=True),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;report&#x27;, name=&#x27;Sales report&#x27;, description=&#x27;Builds a sales report.&#x27;, tags=[&#x27;sales&#x27;])])
+configs = InMemoryPushNotificationConfigStore()
+handler = DefaultRequestHandler(agent_executor=ReportAgent(), task_store=InMemoryTaskStore(), agent_card=card,
+    push_config_store=configs, push_url_validator=allowed,
+    push_sender=RetryingSender(httpx.AsyncClient(timeout=10), configs, push_url_validator=allowed))
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+logging.getLogger(&#x27;a2a.utils.push_url_validator&#x27;).setLevel(logging.ERROR)  # we print the result instead
+
+# --- run both, then shut down ---
+async def run():
+    servers = [uvicorn.Server(uvicorn.Config(a, host=&#x27;127.0.0.1&#x27;, port=p, log_level=&#x27;warning&#x27;))
+               for a, p in ((app, PORT), (hook_app, HOOK_PORT))]
+    serving = [asyncio.create_task(s.serve()) for s in servers]
+    while not all(s.started for s in servers): await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose()
+        for s in servers: s.should_exit = True
+        await asyncio.gather(*serving)
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab18.txt</code></summary><pre class="out">[1] card says push notifications: True
+[2] send the job with a webhook address and credentials; no open connection
+    task 32488290.. TASK_STATE_SUBMITTED
+    a call with the wrong credentials gets 401
+[3] what reaches the webhook (until it goes quiet for 1 s)
+    task           SUBMITTED
+    statusUpdate   task &quot;not-mine&quot;: not one I started, ignored
+    statusUpdate   WORKING
+    artifactUpdate artifact ready
+    statusUpdate   COMPLETED
+    statusUpdate   duplicate, ignored
+    GetTask: TASK_STATE_COMPLETED, artifact &quot;Sales up 6% week on week.&quot;
+[4] agent side: checking the webhook addresses callers give
+    http://10.0.0.5/hook             SDK check allows: False
+    http://169.254.169.254/latest    SDK check allows: False
+    http://127.0.0.1:22/             SDK check allows: False
+    register http://192.168.1.10/hook -&gt; InvalidParamsError: Invalid push notification URL
+</pre></details></section><section id="lab19"><p class="k">LAB 19</p><h2>Cancelling, and follow-ups</h2><h3>What the video showed</h3>
+<p>To stop a job, cancel the task. It's a request, and the agent may not be able to stop. If it can, you get the task back, now canceled. If it can't, for example because the task already finished, you get an error. A finished task can't be reopened. Instead, send a new message with the same context ID and list the earlier task in the message's reference task IDs. The agent answers with a new task (or just a message) and can build on what came before.</p>
+<h3>Run it</h3>
+<pre><code>python lab19_cancel_followup.py
+</code></pre>
+<p>Sample output: <code>out/lab19.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code>: <code>client.cancel_task(CancelTaskRequest(id=...))</code> on a <code>WORKING</code> task returns the task with state <code>CANCELED</code>.</li>
+<li><code>[2]</code>: the same call on a <code>COMPLETED</code> task raises <code>TaskNotCancelableError: Task cannot be canceled</code>.</li>
+<li><code>[3]</code>: a new message to the finished task (same task ID) is refused with <code>UnsupportedOperationError ... is in terminal state</code>.</li>
+<li><code>[4]</code>: the follow-up is built with <code>context_id=first.context_id</code> and <code>follow.reference_task_ids.append(first.id)</code>. It creates a new task ID in the same context.</li>
+<li>The stand-in's answer quotes the earlier tagline. The SDK looked up the referenced task and handed it to the executor as <code>ctx.related_tasks</code>, because the handler was created with <code>SimpleRequestContextBuilder(should_populate_referred_tasks=True, ...)</code>.</li>
+<li>The context ID was created by the agent. The client reuses it as given and treats it as an opaque value.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>In <code>[4]</code>, leave out <code>reference_task_ids</code>. You still get a new task in the same context, but the stand-in no longer sees the earlier task.</li>
+<li>Make the stand-in answer follow-ups with a Message (<code>await q.enqueue_event(new_text_message(..., context_id=ctx.context_id))</code> before creating a task). Then handle <code>reply.message</code> in <code>send()</code>.</li>
+</ul>
+<details><summary>The code <code>lab19_cancel_followup.py</code></summary><pre>&quot;&quot;&quot;Lab 19 (video section s19): cancelling, and follow-ups.
+
+Cancel is a request: if the agent can stop, you get the task back, now CANCELED;
+if it can&#x27;t (the task already finished, say), you get an error. A finished task
+can&#x27;t be reopened: send a new message with the same context ID and list the
+earlier task in referenceTaskIds; the agent answers with a new task (or just a
+message) and can build on what came before. Run: python lab19_cancel_followup.py
+&quot;&quot;&quot;
+import asyncio, logging, socket
+import httpx, uvicorn
+from starlette.applications import Starlette
+from a2a.client import A2ACardResolver, ClientConfig, create_client
+from a2a.helpers import (get_artifact_text, get_message_text, new_message, new_task_from_user_message,
+                         new_text_message, new_text_part)
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.agent_execution.simple_request_context_builder import SimpleRequestContextBuilder
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, CancelTaskRequest,
+                       GetTaskRequest, Role, SendMessageConfiguration, SendMessageRequest, TaskState)
+
+# --- your agent: the client side ---
+st = lambda t: TaskState.Name(t.status.state).removeprefix(&#x27;TASK_STATE_&#x27;)
+
+async def send(client, msg, **config):
+    req = SendMessageRequest(message=msg, configuration=SendMessageConfiguration(**config))
+    return [r async for r in client.send_message(req)][-1].task
+
+async def main():
+    async with httpx.AsyncClient(timeout=10) as http:
+        card = await A2ACardResolver(http, URL).get_agent_card()
+        client = await create_client(card, client_config=ClientConfig(httpx_client=http, streaming=False))
+        user = lambda text, **ids: new_text_message(text, role=Role.ROLE_USER, **ids)
+
+        print(&#x27;[1] cancel a running task&#x27;)
+        task = await send(client, user(&#x27;Translate the full archive&#x27;), return_immediately=True)
+        while st(task) != &#x27;WORKING&#x27;:
+            await asyncio.sleep(0.1); task = await client.get_task(GetTaskRequest(id=task.id))
+        print(f&#x27;    before: {st(task)}&#x27;)
+        task = await client.cancel_task(CancelTaskRequest(id=task.id))
+        print(f&#x27;    cancel returned the task, now {st(task)}&#x27;)
+
+        print(&#x27;[2] cancel a task that already finished&#x27;)
+        first = await send(client, user(&#x27;Write a tagline for our bakery&#x27;))
+        print(f&#x27;    task {first.id[:8]}.. {st(first)}: &quot;{get_artifact_text(first.artifacts[0])}&quot;&#x27;)
+        try:
+            await client.cancel_task(CancelTaskRequest(id=first.id))
+        except Exception as e:
+            print(f&#x27;    error: {type(e).__name__}: {e}&#x27;)
+
+        print(&quot;[3] a finished task can&#x27;t be reopened&quot;)
+        try:
+            await send(client, user(&#x27;Make it shorter&#x27;, task_id=first.id, context_id=first.context_id))
+        except Exception as e:
+            print(f&#x27;    error: {type(e).__name__}: {e}&#x27;.replace(first.id, first.id[:8] + &#x27;..&#x27;))
+
+        print(&#x27;[4] follow-up: same contextId, referenceTaskIds -&gt; a new task&#x27;)
+        # The agent created this context ID; treat it as opaque and reuse it as given.
+        follow = new_message([new_text_part(&#x27;Make it shorter&#x27;)], role=Role.ROLE_USER, context_id=first.context_id)
+        follow.reference_task_ids.append(first.id)
+        second = await send(client, follow)
+        print(f&#x27;    new task {second.id[:8]}.. {st(second)}  new id: {second.id != first.id}  &#x27;
+              f&#x27;same context: {second.context_id == first.context_id}&#x27;)
+        print(f&#x27;    &quot;{get_artifact_text(second.artifacts[0])}&quot;&#x27;)
+        await client.close()
+
+# --- the remote agent (stand-in) ---
+# &quot;Translate&quot; runs until cancelled. A message that references an earlier task
+# builds on that task&#x27;s artifact, which the SDK hands it as related_tasks.
+class Writer(AgentExecutor):
+    async def execute(self, ctx, q):
+        task = new_task_from_user_message(ctx.message); await q.enqueue_event(task)
+        up = TaskUpdater(q, task.id, task.context_id)
+        await asyncio.sleep(0.2); await up.start_work()
+        text = get_message_text(ctx.message)
+        if text.startswith(&#x27;Translate&#x27;):
+            await asyncio.sleep(30)
+        if ctx.related_tasks:
+            earlier = get_artifact_text(ctx.related_tasks[0].artifacts[0])
+            result = f&#x27;{earlier.split(&quot;,&quot;)[0]}. (shorter version of task {ctx.related_tasks[0].id[:8]}..)&#x27;
+        else:
+            result = &#x27;Warm bread, baked fresh every morning.&#x27;
+        await up.add_artifact([new_text_part(result)], name=&#x27;tagline&#x27;)
+        await up.complete()
+    async def cancel(self, ctx, q):
+        await TaskUpdater(q, ctx.task_id, ctx.context_id).cancel()
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+card = AgentCard(name=&#x27;Copy Writer&#x27;, description=&#x27;Writes short marketing copy.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;copy&#x27;, name=&#x27;Write copy&#x27;, description=&#x27;Writes taglines.&#x27;, tags=[&#x27;marketing&#x27;])])
+store = InMemoryTaskStore()
+handler = DefaultRequestHandler(agent_executor=Writer(), task_store=store, agent_card=card,
+    # look up tasks named in referenceTaskIds and pass them to the executor
+    request_context_builder=SimpleRequestContextBuilder(should_populate_referred_tasks=True, task_store=store))
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+# a2a-sdk 1.3.0 logs a cleanup traceback on the server side after it refuses a message
+# to a final task (a background task left pending). Hidden so the lab output stays readable.
+logging.getLogger(&#x27;opentelemetry.context&#x27;).setLevel(logging.CRITICAL)
+logging.getLogger(&#x27;asyncio&#x27;).setLevel(logging.CRITICAL)
+
+# --- run both, then shut down ---
+async def run():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started: await asyncio.sleep(0.05)
+    try: await main()
+    finally:
+        await handler.aclose(); server.should_exit = True; await serving
+
+asyncio.run(run())
+</pre></details>
+<details><summary>Sample output <code>out/lab19.txt</code></summary><pre class="out">[1] cancel a running task
+    before: WORKING
+    cancel returned the task, now CANCELED
+[2] cancel a task that already finished
+    task 53f92fdd.. COMPLETED: &quot;Warm bread, baked fresh every morning.&quot;
+    error: TaskNotCancelableError: Task cannot be canceled
+[3] a finished task can&#x27;t be reopened
+    error: UnsupportedOperationError: Task 53f92fdd.. is in terminal state: TASK_STATE_COMPLETED
+[4] follow-up: same contextId, referenceTaskIds -&gt; a new task
+    new task 0d833df8.. COMPLETED  new id: True  same context: True
+    &quot;Warm bread. (shorter version of task 53f92fdd..)&quot;
+</pre></details></section><section id="lab20"><p class="k">LAB 20</p><h2>Securing your agent</h2><h3>What the video showed</h3>
+<p>Three decisions: how callers sign in, what each caller may do, and what your card shows. Credentials travel with each request, not inside the A2A message. One caller can't see or cancel another caller's tasks, and such a task looks the same as one that doesn't exist.</p>
+<h3>Run it</h3>
+<pre><code>python lab20_secure.py
+</code></pre>
+<p>Sample output: <code>out/lab20.txt</code>. The tokens in the file are labelled examples. The lab runs plain HTTP on 127.0.0.1 only; the spec says production deployments MUST use encryption (HTTPS).</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code> the public card lists the sign-in method (<code>securitySchemes</code>). This lab uses an HTTP bearer token as one example; a card can instead (or also) list an API key, OAuth 2.0, OpenID Connect or mutual TLS.</li>
+<li><code>[2]</code> a SendMessage with no <code>Authorization</code> header gets <code>HTTP 401</code> before it reaches the A2A handler. That's <code>BearerCheck</code>, plain Starlette middleware in front of the routes.</li>
+<li>The token goes in an HTTP header on every request (<code>as_caller</code> puts it on the <code>httpx</code> client), never in the message.</li>
+<li><code>[3]</code> bob asking for alice's task, bob cancelling it, and bob asking for a made-up ID all get the same <code>TaskNotFoundError: Task not found</code>.</li>
+<li>The comment above <code>handler</code>: the SDK's <code>InMemoryTaskStore</code> scopes tasks by the signed-in user's name by default. Your own rules (per skill, action, data) can be added on top.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Give bob alice's token in <code>as_caller(...)</code> and see <code>bob gets alice's task</code> turn into <code>ok</code>. The server only knows callers by their credentials.</li>
+<li>Add a third example token for a new caller to <code>EXAMPLE_TOKENS</code>, create a task as that caller, and check alice can't see it.</li>
+</ul>
+<details><summary>The code <code>lab20_secure.py</code></summary><pre>&quot;&quot;&quot;Lab 20 (video section s20): securing your agent.
+
+Three decisions: how callers sign in, what each caller may do, what your card shows.
+- Sign-in: the card lists the methods you accept (API key, HTTP auth such as a bearer
+  token, OAuth 2.0, OpenID Connect, mutual TLS). This lab uses a bearer token as one
+  example, checked by plain Starlette middleware in front of the A2A routes.
+  Credentials travel with each request, not inside the A2A message.
+- Per caller: one caller can&#x27;t see another caller&#x27;s tasks, and such a task looks the
+  same as one that doesn&#x27;t exist.
+The spec says production deployments MUST use encryption (HTTPS); this lab is plain
+HTTP on 127.0.0.1 only.
+&quot;&quot;&quot;
+import asyncio, socket
+import httpx, uvicorn
+from starlette.applications import Starlette
+from starlette.authentication import AuthCredentials, AuthenticationBackend, AuthenticationError, SimpleUser
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.responses import JSONResponse
+from a2a.client import ClientConfig, create_client
+from a2a.helpers import new_task_from_user_message, new_text_message
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.types import (AgentCapabilities, AgentCard, AgentInterface, AgentSkill, CancelTaskRequest, GetTaskRequest,
+                       HTTPAuthSecurityScheme, Role, SecurityRequirement, SecurityScheme,
+                       SendMessageRequest, StringList, TaskState)
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+EXAMPLE_TOKENS = {&#x27;example-token-alice&#x27;: &#x27;alice&#x27;, &#x27;example-token-bob&#x27;: &#x27;bob&#x27;}   # examples only
+
+
+class BearerCheck(AuthenticationBackend):        # every A2A request is checked; the public card stays open
+    async def authenticate(self, conn):
+        if conn.url.path == &#x27;/.well-known/agent-card.json&#x27;:
+            return None
+        token = conn.headers.get(&#x27;authorization&#x27;, &#x27;&#x27;).removeprefix(&#x27;Bearer &#x27;)
+        if token not in EXAMPLE_TOKENS:
+            raise AuthenticationError(&#x27;missing or unknown bearer token&#x27;)
+        return AuthCredentials([&#x27;authenticated&#x27;]), SimpleUser(EXAMPLE_TOKENS[token])
+
+
+class Done(AgentExecutor):
+    async def execute(self, context, event_queue):
+        task = new_task_from_user_message(context.message)
+        await event_queue.enqueue_event(task)
+        await TaskUpdater(event_queue, task.id, task.context_id).update_status(TaskState.TASK_STATE_COMPLETED)
+    async def cancel(self, context, event_queue): ...
+
+
+card = AgentCard(
+    name=&#x27;Secured Agent&#x27;, description=&#x27;Shows sign-in and per-caller tasks.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    security_schemes={&#x27;bearer&#x27;: SecurityScheme(http_auth_security_scheme=HTTPAuthSecurityScheme(
+        scheme=&#x27;Bearer&#x27;))},
+    security_requirements=[SecurityRequirement(schemes={&#x27;bearer&#x27;: StringList()})],
+    skills=[AgentSkill(id=&#x27;done&#x27;, name=&#x27;Done&#x27;, description=&#x27;Completes at once.&#x27;, tags=[&#x27;demo&#x27;])])
+# The SDK&#x27;s InMemoryTaskStore keeps each task under its owner (by default: the signed-in user&#x27;s
+# name), and a lookup by anyone else finds nothing. Your own authorization rules can go further.
+handler = DefaultRequestHandler(agent_executor=Done(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)],
+                middleware=[Middleware(AuthenticationMiddleware, backend=BearerCheck(),
+                            on_error=lambda conn, e: JSONResponse({&#x27;error&#x27;: str(e)}, status_code=401,
+                                                                  headers={&#x27;WWW-Authenticate&#x27;: &#x27;Bearer&#x27;}))])
+
+
+async def as_caller(token):
+    http = httpx.AsyncClient(headers={&#x27;Authorization&#x27;: f&#x27;Bearer {token}&#x27;})   # credential on every request
+    return await create_client(card, client_config=ClientConfig(streaming=False, httpx_client=http))
+
+
+async def attempt(call):
+    try:
+        await call
+        return &#x27;ok&#x27;
+    except Exception as e:
+        return f&#x27;{type(e).__name__}: {e}&#x27;
+
+
+async def main():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;warning&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+    async with httpx.AsyncClient() as http:
+        print(&#x27;[1] the card lists how to sign in&#x27;)
+        print(f&quot;    {(await http.get(f&#x27;{URL}/.well-known/agent-card.json&#x27;)).json()[&#x27;securitySchemes&#x27;]}&quot;)
+        print(&#x27;[2] SendMessage with no token&#x27;)
+        r = await http.post(URL + &#x27;/&#x27;, headers={&#x27;A2A-Version&#x27;: &#x27;1.0&#x27;}, json={&#x27;jsonrpc&#x27;: &#x27;2.0&#x27;, &#x27;id&#x27;: 1,
+            &#x27;method&#x27;: &#x27;SendMessage&#x27;, &#x27;params&#x27;: {&#x27;message&#x27;: {&#x27;role&#x27;: &#x27;ROLE_USER&#x27;, &#x27;messageId&#x27;: &#x27;m1&#x27;,
+                                                            &#x27;parts&#x27;: [{&#x27;text&#x27;: &#x27;hi&#x27;}]}}})
+        print(f&quot;    HTTP {r.status_code}  WWW-Authenticate: {r.headers.get(&#x27;www-authenticate&#x27;)}  {r.json()}&quot;)
+
+    alice, bob = await as_caller(&#x27;example-token-alice&#x27;), await as_caller(&#x27;example-token-bob&#x27;)
+    async for event in alice.send_message(SendMessageRequest(message=new_text_message(&#x27;hi&#x27;, role=Role.ROLE_USER))):
+        task_id = event.task.id
+    print(f&#x27;[3] alice (token) creates task {task_id[:8]}&#x27;)
+    print(f&#x27;    alice gets her task:        {await attempt(alice.get_task(GetTaskRequest(id=task_id)))}&#x27;)
+    print(f&quot;    bob gets alice&#x27;s task:      {await attempt(bob.get_task(GetTaskRequest(id=task_id)))}&quot;)
+    print(f&quot;    bob cancels alice&#x27;s task:   {await attempt(bob.cancel_task(CancelTaskRequest(id=task_id)))}&quot;)
+    print(f&#x27;    bob gets a made-up task ID: {await attempt(bob.get_task(GetTaskRequest(id=&quot;no-such-task&quot;)))}&#x27;)
+    print(&#x27;    -&gt; the same answer: bob cannot tell whether the task exists&#x27;)
+    await alice.close(); await bob.close()
+    server.should_exit = True
+    await serving
+
+
+asyncio.run(main())
+</pre></details>
+<details><summary>Sample output <code>out/lab20.txt</code></summary><pre class="out">[1] the card lists how to sign in
+    {&#x27;bearer&#x27;: {&#x27;httpAuthSecurityScheme&#x27;: {&#x27;scheme&#x27;: &#x27;Bearer&#x27;}}}
+[2] SendMessage with no token
+    HTTP 401  WWW-Authenticate: Bearer  {&#x27;error&#x27;: &#x27;missing or unknown bearer token&#x27;}
+[3] alice (token) creates task dcd3742e
+    alice gets her task:        ok
+    bob gets alice&#x27;s task:      TaskNotFoundError: Task not found
+    bob cancels alice&#x27;s task:   TaskNotFoundError: Task not found
+    bob gets a made-up task ID: TaskNotFoundError: Task not found
+    -&gt; the same answer: bob cannot tell whether the task exists
+</pre></details></section><section id="lab23"><p class="k">LAB 23</p><h2>Versions and extensions</h2><h3>What the video showed</h3>
+<p>A client sends the A2A version it speaks with every request (current: 1.0); an agent that doesn't support it returns an error instead of guessing. Extensions are listed in the card, a client opts in per request, and if a required extension isn't declared the agent returns an error.</p>
+<h3>Run it</h3>
+<pre><code>python lab23_versions.py
+</code></pre>
+<p>Sample output: <code>out/lab23.txt</code>.</p>
+<h3>What to look for</h3>
+<ul>
+<li><code>[1]</code> raw requests with different <code>A2A-Version</code> headers: <code>1.0</code> works, <code>0.5</code> gets error <code>-32009</code> (VersionNotSupportedError in the JSON-RPC binding). Each raw request also sends <code>A2A-Extensions</code> for citations, so the required-extension check passes.</li>
+<li><code>[1]</code> also shows two things a2a-sdk 1.3.0 really does (explained in the comment under the loop). No header is read as <code>0.3</code>, as the spec says, and refused because this server doesn't serve 0.3. And <code>1.1</code> is accepted: 1.3.0 compares only the major number, while the spec talks about matching Major.Minor.</li>
+<li><code>[2]</code> the SDK client adds <code>A2A-Version: 1.0</code> by itself (the agent's reply prints the header it saw). The opt-in goes in the <code>A2A-Extensions</code> header via <code>ClientCallContext(service_parameters=...)</code>, and the location data rides in the message <code>metadata</code> under the extension's URI.</li>
+<li>The card's <code>capabilities.extensions</code> lists both extensions, using the spec's example URIs; marking citations <code>required=True</code> is this lab's choice.</li>
+<li><code>[3]</code> opting in to geolocation only gets <code>ExtensionSupportRequiredError</code>. Note the comment in <code>Researcher.execute</code>: 1.3.0 passes the opted-in URIs to your code but does not enforce "required" itself, so this check is written by hand.</li>
+</ul>
+<h3>Try this</h3>
+<ul>
+<li>Set the citations extension to <code>required=False</code> and run again: <code>[3]</code> now succeeds.</li>
+<li>Add <code>'2.0'</code> to the version list in <code>[1]</code> and see it refused with <code>-32009</code> as well.</li>
+</ul>
+<details><summary>The code <code>lab23_versions.py</code></summary><pre>&quot;&quot;&quot;Lab 23 (video section s23): versions and extensions.
+
+Versions: a client sends the A2A version it speaks with every request, in the
+A2A-Version header (current: 1.0). An agent that doesn&#x27;t support it returns
+VersionNotSupportedError instead of guessing.
+Extensions: the agent lists them in its card; a client opts in per request with
+the A2A-Extensions header. If a card marks an extension as required and the
+caller doesn&#x27;t declare it, the agent returns ExtensionSupportRequiredError.
+The extension URIs are the spec&#x27;s own examples; marking citations &quot;required&quot; is ours.
+&quot;&quot;&quot;
+import asyncio, logging, socket
+import httpx, uvicorn
+from google.protobuf.json_format import MessageToDict
+from starlette.applications import Starlette
+from a2a.client import ClientCallContext, ClientConfig, create_client
+from a2a.helpers import get_message_text, new_text_message
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import (AgentCapabilities, AgentCard, AgentExtension, AgentInterface, AgentSkill, Role,
+                       SendMessageRequest)
+from a2a.utils.errors import ExtensionSupportRequiredError
+
+with socket.socket() as s:
+    s.bind((&#x27;127.0.0.1&#x27;, 0)); PORT = s.getsockname()[1]
+URL = f&#x27;http://127.0.0.1:{PORT}&#x27;
+logging.getLogger(&#x27;a2a&#x27;).setLevel(logging.CRITICAL)   # hide the SDK&#x27;s own warning/traceback logs
+GEO, CITE = &#x27;https://example.com/extensions/geolocation/v1&#x27;, &#x27;https://standards.org/extensions/citations/v1&#x27;
+
+card = AgentCard(
+    name=&#x27;Research Assistant Agent&#x27;, description=&#x27;Finds places, with sources.&#x27;, version=&#x27;1.0.0&#x27;,
+    default_input_modes=[&#x27;text/plain&#x27;], default_output_modes=[&#x27;text/plain&#x27;],
+    capabilities=AgentCapabilities(streaming=False, extensions=[                # declared in the card
+        AgentExtension(uri=GEO, description=&#x27;Location-based search&#x27;, required=False),
+        AgentExtension(uri=CITE, description=&#x27;Citation formatting&#x27;, required=True)]),
+    supported_interfaces=[AgentInterface(protocol_binding=&#x27;JSONRPC&#x27;, url=URL, protocol_version=&#x27;1.0&#x27;)],
+    skills=[AgentSkill(id=&#x27;search&#x27;, name=&#x27;Search&#x27;, description=&#x27;Finds places.&#x27;, tags=[&#x27;search&#x27;])])
+
+
+class Researcher(AgentExecutor):
+    async def execute(self, context: RequestContext, event_queue) -&gt; None:
+        # a2a-sdk 1.3.0 hands you the opted-in URIs (context.requested_extensions) but does NOT
+        # check &quot;required&quot; for you. This check is ours, written to follow the spec.
+        for ext in card.capabilities.extensions:
+            if ext.required and ext.uri not in context.requested_extensions:
+                raise ExtensionSupportRequiredError(message=f&#x27;This agent requires {ext.uri}&#x27;)
+        version = context.call_context.state[&#x27;headers&#x27;].get(&#x27;a2a-version&#x27;)
+        where = MessageToDict(context.message.metadata).get(GEO)          # the extension&#x27;s data, if sent
+        place = f&quot;near {where[&#x27;latitude&#x27;]}, {where[&#x27;longitude&#x27;]}&quot; if where else &#x27;(no location sent)&#x27;
+        await event_queue.enqueue_event(new_text_message(f&#x27;[saw A2A-Version {version}] searching {place}&#x27;))
+
+    async def cancel(self, context, event_queue): ...
+
+
+handler = DefaultRequestHandler(agent_executor=Researcher(), task_store=InMemoryTaskStore(), agent_card=card)
+app = Starlette(routes=[*create_agent_card_routes(card), *create_jsonrpc_routes(handler, &#x27;/&#x27;)])
+BODY = {&#x27;jsonrpc&#x27;: &#x27;2.0&#x27;, &#x27;id&#x27;: 1, &#x27;method&#x27;: &#x27;SendMessage&#x27;,
+        &#x27;params&#x27;: {&#x27;message&#x27;: {&#x27;role&#x27;: &#x27;ROLE_USER&#x27;, &#x27;messageId&#x27;: &#x27;m1&#x27;, &#x27;parts&#x27;: [{&#x27;text&#x27;: &#x27;Hello&#x27;}]}}}
+
+
+async def main():
+    server = uvicorn.Server(uvicorn.Config(app, host=&#x27;127.0.0.1&#x27;, port=PORT, log_level=&#x27;critical&#x27;))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+
+    print(&#x27;[1] plain httpx SendMessage with different A2A-Version headers&#x27;)
+    async with httpx.AsyncClient() as http:
+        for version in [&#x27;1.0&#x27;, &#x27;0.5&#x27;, &#x27;1.1&#x27;, None]:
+            headers = {&#x27;A2A-Version&#x27;: version, &#x27;A2A-Extensions&#x27;: CITE} if version else {&#x27;A2A-Extensions&#x27;: CITE}
+            reply = (await http.post(URL, json=BODY, headers=headers)).json()
+            err = reply.get(&#x27;error&#x27;)
+            result = f&quot;error {err[&#x27;code&#x27;]}: {err[&#x27;message&#x27;]}&quot; if err else &#x27;ok&#x27;
+            print(f&quot;    A2A-Version {version or &#x27;(none)&#x27;:&lt;6} -&gt; {result}&quot;)
+    # The spec: match Major.Minor, and read an empty header as 0.3. What 1.3.0 really does: it reads
+    # no header as 0.3 (refused here; the routes take enable_v0_3_compat=True to serve 0.3 callers),
+    # but it compares only the major number, so 1.1 is accepted and handled as 1.0.
+
+    print(&#x27;[2] SDK client (adds A2A-Version itself), opting in to both extensions&#x27;)
+    client = await create_client(card, client_config=ClientConfig(streaming=False))
+    msg = new_text_message(&#x27;Find restaurants near me&#x27;, role=Role.ROLE_USER)
+    msg.extensions.append(GEO)
+    msg.metadata.update({GEO: {&#x27;latitude&#x27;: 37.7749, &#x27;longitude&#x27;: -122.4194}})   # the extension&#x27;s data
+    both = ClientCallContext(service_parameters={&#x27;A2A-Extensions&#x27;: f&#x27;{GEO},{CITE}&#x27;})
+    async for event in client.send_message(SendMessageRequest(message=msg), context=both):
+        print(f&#x27;    reply: {get_message_text(event.message)}&#x27;)
+
+    print(&#x27;[3] same request, opting in to geolocation only (citations is required)&#x27;)
+    geo_only = ClientCallContext(service_parameters={&#x27;A2A-Extensions&#x27;: GEO})
+    try:
+        async for event in client.send_message(SendMessageRequest(message=msg), context=geo_only):
+            print(f&#x27;    reply: {get_message_text(event.message)}&#x27;)
+    except Exception as e:
+        print(f&#x27;    caller gets: {type(e).__name__}: {e}&#x27;)
+    await client.close()
+    server.should_exit = True
+    await serving
+
+
+asyncio.run(main())
+</pre></details>
+<details><summary>Sample output <code>out/lab23.txt</code></summary><pre class="out">[1] plain httpx SendMessage with different A2A-Version headers
+    A2A-Version 1.0    -&gt; ok
+    A2A-Version 0.5    -&gt; error -32009: A2A version &#x27;0.5&#x27; is not supported by this handler. Expected version &#x27;1.0&#x27;.
+    A2A-Version 1.1    -&gt; ok
+    A2A-Version (none) -&gt; error -32009: A2A version &#x27;0.3&#x27; is not supported by this handler. Expected version &#x27;1.0&#x27;.
+[2] SDK client (adds A2A-Version itself), opting in to both extensions
+    reply: [saw A2A-Version 1.0] searching near 37.7749, -122.4194
+[3] same request, opting in to geolocation only (citations is required)
+    caller gets: ExtensionSupportRequiredError: This agent requires https://standards.org/extensions/citations/v1
+</pre></details></section></main></div></body></html>

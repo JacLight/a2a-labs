@@ -1,0 +1,10 @@
+[1] a quick question, nothing to track
+    Message: "Yes, until 18:00."
+[2] a job: parts = ['text', 'raw', 'data']
+[3] default call: waits until the task finishes (or pauses)
+    after 1.2s: Task id=f9cbe783.. contextId=ca05171c.. state=TASK_STATE_COMPLETED
+    accepted application/json -> artifact part: data
+[4] returnImmediately: the task comes back as soon as it exists
+    after 0.0s: Task id=9860c91b.. contextId=a1bf55f3.. state=TASK_STATE_SUBMITTED
+    states seen while checking: TASK_STATE_SUBMITTED -> TASK_STATE_WORKING -> TASK_STATE_COMPLETED
+    accepted text/plain -> artifact part: text "2 faces found."

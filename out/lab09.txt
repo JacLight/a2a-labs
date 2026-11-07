@@ -1,0 +1,10 @@
+[1] send "Convert 100 USD"
+    task 0134c3e6  TASK_STATE_INPUT_REQUIRED: "To which currency would you like to convert?"
+[2] answer "EUR" with the same task ID
+    task 0134c3e6  TASK_STATE_COMPLETED: 100 USD = 92 EUR (example rate)
+[3] start a long job, then cancel it (executor stops the work)
+    task 70cfa8a7  TASK_STATE_SUBMITTED
+    after cancel: TASK_STATE_CANCELED
+[4] same, but this executor refuses to cancel
+    caller gets: TaskNotCancelableError: Task cannot be canceled
+    task state the SDK leaves behind: TASK_STATE_FAILED

@@ -1,0 +1,10 @@
+[1] send the job; the waiting call returns at the pause
+    AUTH_REQUIRED: "Needs an OAuth access token for the Calendar API (scope calendar.read)."
+[2] keep listening: subscribe to the task
+    stream: task snapshot, AUTH_REQUIRED
+[3] out of band: the sign-in delivers a token to the agent (stand-in)
+    sign-in route answered 200; no A2A message sent
+[4] the task carries on by itself; updates arrive on the stream
+    stream: status update, WORKING
+    stream: artifact update, "09:00 stand-up; 14:00 dentist"
+    stream: status update, COMPLETED

@@ -1,0 +1,7 @@
+[1] server up at http://127.0.0.1:57872
+    card:     http://127.0.0.1:57872/.well-known/agent-card.json
+    JSON-RPC: http://127.0.0.1:57872/
+[2] send "hi"
+[3] reply: task 54dd1f35...  state TASK_STATE_COMPLETED
+    artifact: Hello, World! I have received your request (hi)
+[4] server stopped

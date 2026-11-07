@@ -1,0 +1,9 @@
+[1] plain httpx SendMessage with different A2A-Version headers
+    A2A-Version 1.0    -> ok
+    A2A-Version 0.5    -> error -32009: A2A version '0.5' is not supported by this handler. Expected version '1.0'.
+    A2A-Version 1.1    -> ok
+    A2A-Version (none) -> error -32009: A2A version '0.3' is not supported by this handler. Expected version '1.0'.
+[2] SDK client (adds A2A-Version itself), opting in to both extensions
+    reply: [saw A2A-Version 1.0] searching near 37.7749, -122.4194
+[3] same request, opting in to geolocation only (citations is required)
+    caller gets: ExtensionSupportRequiredError: This agent requires https://standards.org/extensions/citations/v1

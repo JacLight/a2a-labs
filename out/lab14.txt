@@ -1,0 +1,10 @@
+[1] send "Book me a flight"
+    task 985cdd5d.. INPUT_REQUIRED: "I need more details. Where would you like to fly from and to?"
+[2] answer with the same task ID (and its context ID)
+    task 985cdd5d.. COMPLETED  same task: True
+    artifact: "Booked: From San Francisco to New York"
+[3] answer WITHOUT the task ID (same context ID)
+    reply went to task 48d57bc1.. (INPUT_REQUIRED)  same task: False
+    first task d1b6dfcb.. is still INPUT_REQUIRED
+[4] answer with the task ID but a context ID that isn't the task's
+    rejected: InvalidParamsError: Context some-other-conversation does not match context ed8c3e12.. of task d1b6dfcb..
